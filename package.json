@@ -1,7 +1,7 @@
 {
   "name": "zen-tabs-panel",
   "private": true,
-  "version": "0.3.1-ui-restore-reorder-dom-fix",
+  "version": "0.3.1-ui-restore-title-sort",
   "description": "Tab management command palette and utilities for Zen Browser",
   "scripts": {
     "test": "node --test tests/*.test.js"

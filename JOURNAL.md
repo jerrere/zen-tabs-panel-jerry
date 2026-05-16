@@ -280,6 +280,58 @@ zen-tabs-panel-0.3.1-ui-restore-reorder-dom-fix.xpi
 - 尚未 commit。
 - 尚未 push。
 
+### 2026-05-16 - `0.3.1-ui-restore-title-sort` 本機試用版
+
+需求：
+
+- 在 `Reorder tabs` 子選單加入新的排序功能。
+- 顯示名稱：`Title (A-Z)`。
+- 放在最後。
+- 快捷鍵：`0`。
+- 排序依據：Zen 左側 sidebar 顯示的 tab 名稱。
+- 如果使用者雙擊自定義名稱，使用自定義名稱。
+- 沒有自定義名稱時，用原本 tab 名稱。
+- 第一次執行 A-Z，第二次執行同功能切換 Z-A。
+- 大小寫不敏感。
+- 使用瀏覽器預設 locale。
+- 使用自然排序，例如 `tab 2` 在 `tab 10` 前面。
+- 空名稱或只有空白的 tab 放最後。
+- 只排序目前 workspace。
+- pinned / Essential 規則沿用既有 reorder 行為。
+
+修正：
+
+- `popup/popup.js`
+  - 在 `showReorderTabs()` 最後新增 `Title (A-Z)` 項目。
+  - hotkey 使用 `0`。
+  - action 使用 `sort-tabs-title-toggle`。
+- `background.js`
+  - 新增 `titleSortDescending` 狀態，用來在 A-Z / Z-A 間切換。
+  - 使用 `Intl.Collator(undefined, { numeric: true, sensitivity: "base" })` 做自然排序與大小寫不敏感比較。
+  - 空白 title 永遠排最後。
+  - 仍透過 `browser.zenWorkspaces.reorderTabsByDomIds()` 套用排序。
+
+版本：
+
+```json
+{
+  "version": "0.3.1.4",
+  "version_name": "0.3.1-ui-restore-title-sort"
+}
+```
+
+交付：
+
+```text
+zen-tabs-panel-0.3.1-ui-restore-title-sort.xpi
+```
+
+狀態：
+
+- 本機試用版。
+- 尚未 commit。
+- 尚未 push。
+
 ## 目前工作樹注意事項
 
 截至 2026-05-16 18:21，本地工作樹有尚未 commit 的 `0.3.1-ui-restore` 修改。

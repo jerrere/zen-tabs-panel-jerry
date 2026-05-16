@@ -10,6 +10,7 @@
 
 let autoMoveTimeout = null;
 let lastActiveTabId = null;
+let titleSortDescending = false;
 
 function cancelAutoMove() {
   if (autoMoveTimeout !== null) {
@@ -201,6 +202,7 @@ async function sortCurrentWorkspaceTabs(sortAction) {
   if (tabs.length <= 1) return;
 
   const getDomain = (url) => { try { return new URL(url).hostname; } catch (e) { return ""; } };
+  const compareTitle = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" }).compare;
 
   switch (sortAction) {
     case "sort-tabs-recent-desc":
@@ -257,6 +259,19 @@ async function sortCurrentWorkspaceTabs(sortAction) {
       dups.sort((a, b) => a.url.localeCompare(b.url));
       tabs.length = 0;
       tabs.push(...dups, ...nonDups);
+      break;
+    }
+    case "sort-tabs-title-toggle": {
+      const direction = titleSortDescending ? -1 : 1;
+      tabs.sort((a, b) => {
+        const aTitle = (a.title || "").trim();
+        const bTitle = (b.title || "").trim();
+        if (!aTitle && !bTitle) return 0;
+        if (!aTitle) return 1;
+        if (!bTitle) return -1;
+        return direction * compareTitle(aTitle, bTitle);
+      });
+      titleSortDescending = !titleSortDescending;
       break;
     }
   }
@@ -395,7 +410,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "sort-tabs-age-desc":
     case "sort-tabs-inactive-bottom":
     case "sort-tabs-most-visited":
-    case "sort-tabs-group-dups": {
+    case "sort-tabs-group-dups":
+    case "sort-tabs-title-toggle": {
       (async () => {
         await browser.zenWorkspaces.hidePalette();
         await sortCurrentWorkspaceTabs(message.type);

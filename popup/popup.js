@@ -1888,6 +1888,7 @@ function showReorderTabs() {
     { label: "Inactive at bottom", hotkey: "7", icon: "svg:moon", reorderAction: "sort-tabs-inactive-bottom" },
     { label: "Most visited first", hotkey: "8", icon: "svg:star", reorderAction: "sort-tabs-most-visited" },
     { label: "Group duplicates", hotkey: "9", icon: "⊜", reorderAction: "sort-tabs-group-dups" },
+    { label: "Title (A-Z)", hotkey: "0", icon: "svg:arrow-up-down", reorderAction: "sort-tabs-title-toggle" },
   ];
 
   items = reorderOptions;
