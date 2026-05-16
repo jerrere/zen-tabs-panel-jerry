@@ -1,9 +1,6 @@
 /* globals ExtensionAPI, Services */
 "use strict";
 
-const { ExtensionCommon } = ChromeUtils.importESModule("resource://gre/modules/ExtensionCommon.sys.mjs");
-const { EventManager } = ExtensionCommon;
-
 this.zenWorkspaces = class extends ExtensionAPI {
   getAPI(context) {
 
@@ -84,9 +81,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
     // Clean up on extension unload
     context.callOnClose({
       close() {
-        try { disarmChord(); } catch (e) {}
-        try { uninstallGestureListener(); } catch (e) {}
-        try { cancelSyncDuplicates(); } catch (e) {}
         const w = Services.wm.getMostRecentWindow("navigator:browser");
         if (!w) return;
         const overlay = w.document.getElementById("zen-tabs-panel-overlay");
@@ -134,20 +128,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
       return Array.from(w.document.querySelectorAll(".tabbrowser-tab"));
     }
 
-    async function changeWorkspaceByOffset(offset) {
-      const w = getWin();
-      if (!w?.gZenWorkspaces) return false;
-      const list = w.gZenWorkspaces.getWorkspaces();
-      if (!Array.isArray(list) || list.length < 2) return false;
-      const active = w.gZenWorkspaces.getActiveWorkspace();
-      if (!active) return false;
-      const idx = list.findIndex((ws) => ws.uuid === active.uuid);
-      if (idx < 0) return false;
-      const next = list[(idx + offset + list.length) % list.length];
-      try { await w.gZenWorkspaces.changeWorkspace(next); return true; }
-      catch (e) { return false; }
-    }
-
     const DUP_INDICATOR_CSS = `
         .tabbrowser-tab[zen-tabs-panel-duplicate] .tab-content {
           position: relative !important;
@@ -186,74 +166,36 @@ this.zenWorkspaces = class extends ExtensionAPI {
         }
     `;
 
-    const DUP_ATTR = "zen-tabs-panel-duplicate";
-    const DUP_STYLE_ID = "zen-tabs-panel-dup-indicator-styles";
-    const SYNC_DUP_DEBOUNCE_MS = 50;
-    let dupStylesInjected = false;
-    let syncDupDebounceTimer = null;
-
     function ensureDuplicateStyles() {
-      if (dupStylesInjected) return;
       const w = getWin();
       if (!w) return;
-      let el = w.document.getElementById(DUP_STYLE_ID);
+      let el = w.document.getElementById("zen-tabs-panel-dup-indicator-styles");
       if (!el) {
         el = w.document.createElement("style");
-        el.id = DUP_STYLE_ID;
-        el.textContent = DUP_INDICATOR_CSS;
+        el.id = "zen-tabs-panel-dup-indicator-styles";
         w.document.documentElement.appendChild(el);
-      } else if (el.textContent !== DUP_INDICATOR_CSS) {
-        el.textContent = DUP_INDICATOR_CSS;
       }
-      dupStylesInjected = true;
+      el.textContent = DUP_INDICATOR_CSS;
     }
 
-    // Walk all tabs once to count URLs, then a second time to apply only the
-    // diffs (gated by hasAttribute) — most calls in steady state mutate zero
-    // attributes since dup status changes only when a tab navigates.
     function syncDuplicateAttributes() {
       ensureDuplicateStyles();
       const tabs = getAllTabElements();
-      const urlCounts = new Map();
-      for (let i = 0; i < tabs.length; i++) {
-        const url = tabs[i].linkedBrowser?.currentURI?.spec || "";
-        if (url && url !== "about:newtab" && url !== "about:blank") {
-          urlCounts.set(url, (urlCounts.get(url) || 0) + 1);
-        }
-      }
-      for (let i = 0; i < tabs.length; i++) {
-        const tab = tabs[i];
+      const urlCounts = {};
+      for (const tab of tabs) {
         const url = tab.linkedBrowser?.currentURI?.spec || "";
-        const shouldBeDup = (urlCounts.get(url) || 0) > 1;
-        const isDup = tab.hasAttribute(DUP_ATTR);
-        if (shouldBeDup && !isDup) {
-          tab.setAttribute(DUP_ATTR, "true");
-        } else if (!shouldBeDup && isDup) {
-          tab.removeAttribute(DUP_ATTR);
+        if (url && url !== "about:newtab" && url !== "about:blank") {
+          urlCounts[url] = (urlCounts[url] || 0) + 1;
         }
       }
-    }
-
-    // Trailing-edge debounce: every call resets the timer so a burst of tab
-    // events (e.g. the multiple URL-change notifications during one page
-    // load) coalesces into a single attribute-update pass.
-    function scheduleSyncDuplicates() {
-      const w = getWin();
-      if (!w) return;
-      if (syncDupDebounceTimer !== null) {
-        w.clearTimeout(syncDupDebounceTimer);
+      for (const tab of tabs) {
+        const url = tab.linkedBrowser?.currentURI?.spec || "";
+        if (urlCounts[url] > 1) {
+          tab.setAttribute("zen-tabs-panel-duplicate", "true");
+        } else {
+          tab.removeAttribute("zen-tabs-panel-duplicate");
+        }
       }
-      syncDupDebounceTimer = w.setTimeout(() => {
-        syncDupDebounceTimer = null;
-        syncDuplicateAttributes();
-      }, SYNC_DUP_DEBOUNCE_MS);
-    }
-
-    function cancelSyncDuplicates() {
-      if (syncDupDebounceTimer === null) return;
-      const w = getWin();
-      if (w) w.clearTimeout(syncDupDebounceTimer);
-      syncDupDebounceTimer = null;
     }
 
     // Activate a native tab, switching workspaces if needed
@@ -337,116 +279,14 @@ this.zenWorkspaces = class extends ExtensionAPI {
 
     const OVERLAY_ID = "zen-tabs-panel-overlay";
     const PANEL_ID = "zen-tabs-panel-panel";
-    const BROWSER_ID = "zen-tabs-panel-browser";
-
-    const VIEW_SIZES = {
-      actions:              { width: 960, height: 604 },
-      "child-tabs":         { width: 720, height: 604 },
-      "sibling-tabs":       { width: 720, height: 604 },
-      "parent-tabs":        { width: 720, height: 604 },
-      navigation:           { width: 600, height: 604 },
-      "unvisited-tabs":     { width: 720, height: 604 },
-      "last-visited":       { width: 720, height: 604 },
-      "recently-closed":    { width: 600, height: 604 },
-      duplicates:           { width: 720, height: 604 },
-      "tab-info":           { width: 600, height: 604 },
-      domains:              { width: 720, height: 604 },
-      "domain-tabs":        { width: 720, height: 604 },
-      "tabs-by-age":        { width: 720, height: 604 },
-      "most-visited":       { width: 720, height: 604 },
-      "reorder-tabs":       { width: 600, height: 604 },
-      "move-to-workspace":  { width: 600, height: 604 },
-      "close-and-select":   { width: 600, height: 604 },
-    };
-
-    // Chord/leader-key shortcut tree. After the leader (MacCtrl+Cmd+.) fires,
-    // a chrome-window-level keydown listener runs the user's next key against
-    // this tree. Matched terminals fire actions or open submenus directly,
-    // skipping the main palette menu. The tree is built from the shared
-    // keybindings registry (shared/keybindings.js) so chord shortcuts and
-    // popup menu hotkey badges stay in sync.
-    const CHORD_ROOT_TIMEOUT_MS = 400;
-    const CHORD_PREFIX_TIMEOUT_MS = 600;
-
-    const kbScope = {};
-    Services.scriptloader.loadSubScript(
-      context.extension.getURL("shared/keybindings.js"),
-      kbScope
-    );
-    const KEYBINDINGS = kbScope.ZEN_KEYBINDINGS || [];
-    const WORKSPACE_DIGIT_CHORDS = kbScope.ZEN_WORKSPACE_DIGIT_CHORDS || [];
-
-    function buildChordNode(entry) {
-      if (entry.kind === "action") return { type: "action", actionId: entry.id };
-      if (entry.kind === "open-view") return { type: "open-view", view: entry.view };
-      if (entry.kind === "prefix") {
-        const children = {};
-        for (const child of (entry.children || [])) {
-          children[child.chord] = buildChordNode(child);
-        }
-        return {
-          type: "prefix",
-          timeoutMs: CHORD_PREFIX_TIMEOUT_MS,
-          onTimeout: { type: "open-view", view: entry.view },
-          children,
-        };
-      }
-      return null;
-    }
-
-    const CHORD_TREE = { children: {} };
-    for (const entry of KEYBINDINGS) {
-      const node = buildChordNode(entry);
-      if (node) CHORD_TREE.children[entry.chord] = node;
-    }
-    for (let i = 0; i < WORKSPACE_DIGIT_CHORDS.length; i++) {
-      CHORD_TREE.children[WORKSPACE_DIGIT_CHORDS[i]] = { type: "switch-workspace", index: i };
-    }
 
     let pendingView = null;
-    let pendingParams = {};
-    let navStack = [];
-    let currentViewName = null;
-    let morphGeneration = 0;
-
-    // Chord engine state.
-    let chordState = null;          // null | "armed-root" | "armed-prefix"
-    let chordCurrentNode = null;
-    let chordTimer = null;
-    let chordKeyListener = null;
-    let chordBlurListener = null;
-    let chordResolve = null;        // resolver for the showPalette() promise
-    let chordPrefixOnTimeout = null;
 
     function getPaletteURL() {
       const isDark = getWin()?.document?.documentElement?.getAttribute("zen-should-be-dark-mode") === "true";
       let url = context.extension.getURL("popup/popup.html") + "?theme=" + (isDark ? "dark" : "light");
       if (pendingView) url += "&view=" + encodeURIComponent(pendingView);
-      if (pendingParams) {
-        for (const [k, v] of Object.entries(pendingParams)) {
-          url += "&" + encodeURIComponent(k) + "=" + encodeURIComponent(v);
-        }
-      }
       return url;
-    }
-
-    function getViewSize(view) {
-      return VIEW_SIZES[view] || VIEW_SIZES["actions"];
-    }
-
-    function createBrowserElement(w, size) {
-      const br = w.document.createXULElement("browser");
-      br.id = BROWSER_ID;
-      br.setAttribute("type", "content");
-      br.setAttribute("remote", "true");
-      br.setAttribute("maychangeremoteness", "true");
-      br.setAttribute("disableglobalhistory", "true");
-      br.setAttribute("messagemanagergroup", "webext-browsers");
-      br.setAttribute("webextension-view-type", "popup");
-      br.setAttribute("transparent", "true");
-      br.setAttribute("src", getPaletteURL());
-      br.style.cssText = "width:" + size.width + "px;height:" + size.height + "px;border:none;opacity:1";
-      return br;
     }
 
     function createOverlay() {
@@ -455,6 +295,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
 
       if (w.document.getElementById(OVERLAY_ID)) return null;
 
+      // Inject animation styles into chrome if not already present
       if (!w.document.getElementById("zen-tabs-panel-anim-styles")) {
         const animStyle = w.document.createElement("style");
         animStyle.id = "zen-tabs-panel-anim-styles";
@@ -492,12 +333,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
         w.document.documentElement.appendChild(previewStyle);
       }
 
-      const viewName = pendingView || "actions";
-      const size = getViewSize(viewName);
-
-      navStack = [];
-      currentViewName = viewName;
-
       const overlay = w.document.createElement("div");
       overlay.id = OVERLAY_ID;
       overlay.style.cssText = [
@@ -517,8 +352,8 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const panel = w.document.createElement("div");
       panel.id = PANEL_ID;
       panel.style.cssText = [
-        "width: " + size.width + "px",
-        "max-height: " + size.height + "px",
+        "width: 600px",
+        "max-height: 604px",
         "background: var(--arrowpanel-background, light-dark(rgb(244, 244, 244), rgb(31, 31, 31)))",
         "border-radius: 12px",
         "border: 1px solid var(--zen-colors-border, light-dark(rgba(0,0,0,0.15), rgba(255,255,255,0.08)))",
@@ -527,10 +362,20 @@ this.zenWorkspaces = class extends ExtensionAPI {
         "display: flex",
         "flex-direction: column",
         "animation: ztt-panel-in 0.15s ease-out",
-        "transition: width 0.15s ease-out, max-height 0.15s ease-out",
       ].join(";");
 
-      const br = createBrowserElement(w, size);
+      const br = w.document.createXULElement("browser");
+      br.id = "zen-tabs-panel-browser";
+      br.setAttribute("type", "content");
+      br.setAttribute("remote", "true");
+      br.setAttribute("maychangeremoteness", "true");
+      br.setAttribute("disableglobalhistory", "true");
+      br.setAttribute("messagemanagergroup", "webext-browsers");
+      br.setAttribute("webextension-view-type", "popup");
+      br.setAttribute("transparent", "true");
+      br.setAttribute("src", getPaletteURL());
+      br.style.cssText = "width:600px;height:604px;border:none";
+
       panel.appendChild(br);
       overlay.appendChild(panel);
 
@@ -549,47 +394,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
       return overlay;
     }
 
-    function morphToView(view, params) {
-      const w = getWin();
-      if (!w) return;
-      const panel = w.document.getElementById(PANEL_ID);
-      const oldBrowser = w.document.getElementById(BROWSER_ID);
-      if (!panel || !oldBrowser) return;
-
-      const gen = ++morphGeneration;
-      const targetSize = getViewSize(view);
-
-      oldBrowser.style.transition = "opacity 0.08s ease-out";
-      oldBrowser.style.opacity = "0";
-
-      w.setTimeout(() => {
-        if (gen !== morphGeneration) return;
-
-        panel.style.width = targetSize.width + "px";
-        panel.style.maxHeight = targetSize.height + "px";
-
-        pendingView = view === "actions" ? null : view;
-        pendingParams = params || {};
-        const newBr = createBrowserElement(w, targetSize);
-        newBr.style.opacity = "0";
-        pendingView = null;
-        pendingParams = {};
-
-        oldBrowser.remove();
-        panel.appendChild(newBr);
-
-        w.setTimeout(() => {
-          if (gen !== morphGeneration) return;
-          newBr.style.transition = "opacity 0.08s ease-out";
-          newBr.style.opacity = "1";
-          w.setTimeout(() => {
-            if (gen !== morphGeneration) return;
-            newBr.focus();
-          }, 50);
-        }, 160);
-      }, 80);
-    }
-
     function destroyOverlay() {
       clearPreviewState();
       const w = getWin();
@@ -598,10 +402,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
       if (!overlay || overlay.dataset.closing) return;
 
       overlay.dataset.closing = "true";
-      morphGeneration++;
-      navStack = [];
-      currentViewName = null;
-
       const panel = w.document.getElementById(PANEL_ID);
       overlay.style.animation = "ztt-overlay-out 0.12s ease-in forwards";
       if (panel) panel.style.animation = "ztt-panel-out 0.12s ease-in forwards";
@@ -613,246 +413,12 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const w = getWin();
       if (!w) return false;
       const overlay = w.document.getElementById(OVERLAY_ID);
+      // Not open if it's animating out
       return overlay && !overlay.dataset.closing;
     }
 
-    // -----------------------------------------------------------------------
-    // Chord engine
-    // -----------------------------------------------------------------------
-
-    // Map a keydown event to a chord-tree key string, or null if it should be
-    // ignored (pure modifier press, or non-Shift modifier held — those fall
-    // through to the OS/browser).
-    function chordKeyFor(e) {
-      if (e.key === "Meta" || e.key === "Control" || e.key === "Alt" || e.key === "Shift") return null;
-      if (e.metaKey || e.ctrlKey || e.altKey) return null;
-      if (e.key === "Escape") return "Escape";
-      if (e.key.length === 1 && /[a-z]/i.test(e.key)) {
-        const upper = e.key.toUpperCase();
-        return e.shiftKey ? "Shift+" + upper : upper;
-      }
-      return e.key;
-    }
-
-    function disarmChord() {
-      const w = getWin();
-      if (chordTimer !== null && w) {
-        w.clearTimeout(chordTimer);
-      }
-      if (chordKeyListener && w) {
-        w.removeEventListener("keydown", chordKeyListener, true);
-      }
-      if (chordBlurListener && w) {
-        w.removeEventListener("blur", chordBlurListener, true);
-      }
-      chordTimer = null;
-      chordKeyListener = null;
-      chordBlurListener = null;
-      chordState = null;
-      chordCurrentNode = null;
-      chordPrefixOnTimeout = null;
-    }
-
-    // -----------------------------------------------------------------------
-    // Double-tap-Cmd gesture: persistent chrome-window listener that opens
-    // the palette when the user taps Cmd-alone twice within DOUBLE_TAP_WINDOW_MS.
-    // Replaces the awkward Ctrl+Cmd+. leader for daily use; the manifest
-    // keybinding stays as a fallback.
-    // -----------------------------------------------------------------------
-    const DOUBLE_TAP_WINDOW_MS = 350;
-    let cmdAlone = false;
-    let lastCmdAloneRelease = 0;
-    let gestureListeners = null;
-    let paletteRequestFire = null;
-
-    function onGestureKeydown(e) {
-      if (e.key === "Meta") {
-        cmdAlone = true;
-      } else if (e.metaKey) {
-        // A non-modifier key pressed while Cmd is held — Cmd is being used
-        // as part of a real shortcut, so disqualify this hold from counting
-        // as a clean Cmd-alone tap.
-        cmdAlone = false;
-      }
-    }
-
-    function onGestureKeyup(e) {
-      if (e.key !== "Meta") return;
-      if (cmdAlone) {
-        const now = Date.now();
-        if (now - lastCmdAloneRelease < DOUBLE_TAP_WINDOW_MS) {
-          lastCmdAloneRelease = 0;
-          if (paletteRequestFire) paletteRequestFire.async();
-        } else {
-          lastCmdAloneRelease = now;
-        }
-      } else {
-        lastCmdAloneRelease = 0;
-      }
-    }
-
-    function onGestureBlur() {
-      cmdAlone = false;
-      lastCmdAloneRelease = 0;
-    }
-
-    function installGestureListener() {
-      const w = getWin();
-      if (!w || gestureListeners) return;
-      gestureListeners = { keydown: onGestureKeydown, keyup: onGestureKeyup, blur: onGestureBlur };
-      w.addEventListener("keydown", gestureListeners.keydown, true);
-      w.addEventListener("keyup",   gestureListeners.keyup,   true);
-      w.addEventListener("blur",    gestureListeners.blur,    true);
-    }
-
-    function uninstallGestureListener() {
-      const w = getWin();
-      if (!w || !gestureListeners) return;
-      w.removeEventListener("keydown", gestureListeners.keydown, true);
-      w.removeEventListener("keyup",   gestureListeners.keyup,   true);
-      w.removeEventListener("blur",    gestureListeners.blur,    true);
-      gestureListeners = null;
-    }
-
-    function openOverlayWithView(view) {
-      pendingView = view || null;
-      pendingParams = {};
-      createOverlay();
-      pendingView = null;
-      pendingParams = {};
-    }
-
-    function onChordKey(e) {
-      const k = chordKeyFor(e);
-      // Ignore pure-modifier keydowns and modifier-co-pressed keys: leave them
-      // alone so the OS/browser can handle Cmd+P etc. The chord arm still
-      // stays live for these — but in practice the leader's modifiers have
-      // released by the time the user presses a chord key, so this rarely
-      // matters. We don't disarm here either; the chord just continues to
-      // wait until a real candidate or timeout.
-      if (k === null) return;
-
-      if (k === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        const resolve = chordResolve;
-        chordResolve = null;
-        disarmChord();
-        if (resolve) resolve({ kind: "chord-cancelled" });
-        return;
-      }
-
-      const node = chordCurrentNode?.children?.[k];
-      if (!node) {
-        // Unknown key: cancel chord silently — no panel.
-        e.preventDefault();
-        e.stopPropagation();
-        const resolve = chordResolve;
-        chordResolve = null;
-        disarmChord();
-        if (resolve) resolve({ kind: "chord-cancelled" });
-        return;
-      }
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      if (node.type === "action") {
-        const resolve = chordResolve;
-        chordResolve = null;
-        disarmChord();
-        if (resolve) resolve({ kind: "chord-action", actionId: node.actionId });
-        return;
-      }
-
-      if (node.type === "open-view") {
-        const resolve = chordResolve;
-        chordResolve = null;
-        disarmChord();
-        openOverlayWithView(node.view);
-        if (resolve) resolve({ kind: "opened" });
-        return;
-      }
-
-      if (node.type === "switch-workspace") {
-        const w = getWin();
-        const resolve = chordResolve;
-        chordResolve = null;
-        disarmChord();
-        if (w?.gZenWorkspaces) {
-          const list = w.gZenWorkspaces.getWorkspaces();
-          const ws = Array.isArray(list) ? list[node.index] : null;
-          if (ws?.uuid) {
-            try { w.gZenWorkspaces.changeWorkspaceWithID(ws.uuid); } catch (err) {}
-          }
-        }
-        if (resolve) resolve({ kind: "chord-cancelled" });
-        return;
-      }
-
-      if (node.type === "prefix") {
-        const w = getWin();
-        if (chordTimer !== null && w) w.clearTimeout(chordTimer);
-        chordCurrentNode = node;
-        chordPrefixOnTimeout = node.onTimeout || null;
-        chordState = "armed-prefix";
-        chordTimer = w ? w.setTimeout(onChordTimeout, node.timeoutMs ?? CHORD_PREFIX_TIMEOUT_MS) : null;
-      }
-    }
-
-    function onChordTimeout() {
-      const resolve = chordResolve;
-      chordResolve = null;
-      const onTimeout = chordPrefixOnTimeout;
-      disarmChord();
-
-      if (onTimeout && onTimeout.type === "open-view") {
-        openOverlayWithView(onTimeout.view);
-      } else {
-        openOverlayWithView(null); // root timeout → main actions menu
-      }
-      if (resolve) resolve({ kind: "opened" });
-    }
-
-    function onChordBlur() {
-      const resolve = chordResolve;
-      chordResolve = null;
-      disarmChord();
-      if (resolve) resolve({ kind: "chord-cancelled" });
-    }
-
-    function armChord(resolve) {
-      const w = getWin();
-      if (!w) {
-        resolve({ kind: "chord-cancelled" });
-        return;
-      }
-      chordResolve = resolve;
-      chordCurrentNode = CHORD_TREE;
-      chordState = "armed-root";
-      chordKeyListener = onChordKey;
-      chordBlurListener = onChordBlur;
-      // Capture-phase keydown on the chrome window catches keys regardless of
-      // whether chrome or content has focus, because the chrome window owns
-      // the XUL <browser> element wrapping the active tab.
-      w.addEventListener("keydown", chordKeyListener, true);
-      w.addEventListener("blur", chordBlurListener, true);
-      chordTimer = w.setTimeout(onChordTimeout, CHORD_ROOT_TIMEOUT_MS);
-    }
-
-    installGestureListener();
-
     return {
       zenWorkspaces: {
-        onPaletteRequest: new EventManager({
-          context,
-          name: "zenWorkspaces.onPaletteRequest",
-          register: (fire) => {
-            paletteRequestFire = fire;
-            return () => { paletteRequestFire = null; };
-          },
-        }).api(),
-
         async getAll() {
           const w = getWin();
           if (!w || !w.gZenWorkspaces) return [];
@@ -933,172 +499,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
           return activateNativeTab(currentTab.openerTab);
         },
 
-        async goToNextSibling() {
-          const w = getWin();
-          if (!w || !w.gBrowser || !w.gZenWorkspaces) return false;
-          const currentTab = w.gBrowser.selectedTab;
-          if (!currentTab || !currentTab.openerTab) return false;
-          const siblings = getAllTabElements().filter((t) => t.openerTab === currentTab.openerTab);
-          const idx = siblings.indexOf(currentTab);
-          if (idx < 0 || idx === siblings.length - 1) return false;
-          return activateNativeTab(siblings[idx + 1]);
-        },
-
-        async goToPrevSibling() {
-          const w = getWin();
-          if (!w || !w.gBrowser || !w.gZenWorkspaces) return false;
-          const currentTab = w.gBrowser.selectedTab;
-          if (!currentTab || !currentTab.openerTab) return false;
-          const siblings = getAllTabElements().filter((t) => t.openerTab === currentTab.openerTab);
-          const idx = siblings.indexOf(currentTab);
-          if (idx <= 0) return false;
-          return activateNativeTab(siblings[idx - 1]);
-        },
-
-        async goToNextVerticalTab() {
-          const w = getWin();
-          if (!w || !w.gBrowser || !w.gZenWorkspaces) return false;
-          const currentTab = w.gBrowser.selectedTab;
-          if (!currentTab) return false;
-          const ws = currentTab.getAttribute("zen-workspace-id");
-          const sameWorkspace = getAllTabElements().filter(
-            (t) => t.getAttribute("zen-workspace-id") === ws
-          );
-          const idx = sameWorkspace.indexOf(currentTab);
-          if (idx < 0 || idx === sameWorkspace.length - 1) return false;
-          return activateNativeTab(sameWorkspace[idx + 1]);
-        },
-
-        // Return the DOM id of the tab that would be focused if the active
-        // tab were closed right now (the browser's default Cmd+W successor).
-        async getDefaultCloseTargetDomId() {
-          const w = getWin();
-          if (!w?.gBrowser) return null;
-          const cur = w.gBrowser.selectedTab;
-          if (!cur) return null;
-          try {
-            const next = w.gBrowser._findTabToBlurTo(cur);
-            return next?.id || null;
-          } catch (e) {
-            return null;
-          }
-        },
-
-        async goToPrevVerticalTab() {
-          const w = getWin();
-          if (!w || !w.gBrowser || !w.gZenWorkspaces) return false;
-          const currentTab = w.gBrowser.selectedTab;
-          if (!currentTab) return false;
-          const ws = currentTab.getAttribute("zen-workspace-id");
-          const sameWorkspace = getAllTabElements().filter(
-            (t) => t.getAttribute("zen-workspace-id") === ws
-          );
-          const idx = sameWorkspace.indexOf(currentTab);
-          if (idx <= 0) return false;
-          return activateNativeTab(sameWorkspace[idx - 1]);
-        },
-
-        async goToNextWorkspace() {
-          return changeWorkspaceByOffset(+1);
-        },
-
-        async goToPrevWorkspace() {
-          return changeWorkspaceByOffset(-1);
-        },
-
-        async togglePinTab() {
-          const w = getWin();
-          if (!w || !w.gBrowser) return false;
-          const tab = w.gBrowser.selectedTab;
-          if (!tab) return false;
-          if (tab.hasAttribute("zen-essential")) return false;
-          if (tab.pinned) {
-            w.gBrowser.unpinTab(tab);
-          } else {
-            w.gBrowser.pinTab(tab);
-          }
-          return true;
-        },
-
-        async copyCurrentUrlMarkdown() {
-          const w = getWin();
-          if (!w || !w.gBrowser) return false;
-          const tab = w.gBrowser.selectedTab;
-          if (!tab) return false;
-          const url = tab.linkedBrowser?.currentURI?.spec || "";
-          if (!url) return false;
-          const title = (tab.label || "").replace(/[\[\]]/g, "");
-          const md = "[" + title + "](" + url + ")";
-          try {
-            const clip = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(Ci.nsIClipboardHelper);
-            clip.copyString(md);
-            return true;
-          } catch (e) {
-            return false;
-          }
-        },
-
-        async restoreLastClosedTab() {
-          const w = getWin();
-          if (!w) return false;
-          try {
-            const SS = ChromeUtils.importESModule("resource:///modules/sessionstore/SessionStore.sys.mjs").SessionStore;
-            if (!SS || SS.getClosedTabCount(w) === 0) return false;
-            SS.undoCloseTab(w, 0);
-            return true;
-          } catch (e) {
-            return false;
-          }
-        },
-
-        async splitNew() {
-          const w = getWin();
-          if (!w?.gZenViewSplitter) return false;
-          try { w.gZenViewSplitter.createEmptySplit("right"); return true; }
-          catch (e) { return false; }
-        },
-
-        async splitClose() {
-          const w = getWin();
-          if (!w?.gZenViewSplitter) return false;
-          try { w.gZenViewSplitter.unsplitCurrentView(); return true; }
-          catch (e) { return false; }
-        },
-
-        async splitHorizontal() {
-          const w = getWin();
-          if (!w?.gZenViewSplitter) return false;
-          try { w.gZenViewSplitter.toggleShortcut("hsep"); return true; }
-          catch (e) { return false; }
-        },
-
-        async splitVertical() {
-          const w = getWin();
-          if (!w?.gZenViewSplitter) return false;
-          try { w.gZenViewSplitter.toggleShortcut("vsep"); return true; }
-          catch (e) { return false; }
-        },
-
-        async goBackInTab() {
-          const w = getWin();
-          if (!w?.gBrowser) return false;
-          try {
-            if (!w.gBrowser.canGoBack) return false;
-            w.gBrowser.goBack();
-            return true;
-          } catch (e) { return false; }
-        },
-
-        async goForwardInTab() {
-          const w = getWin();
-          if (!w?.gBrowser) return false;
-          try {
-            if (!w.gBrowser.canGoForward) return false;
-            w.gBrowser.goForward();
-            return true;
-          } catch (e) { return false; }
-        },
-
         // Close a tab by DOM id — works cross-workspace.
         async closeTabByDomId(domId) {
           const w = getWin();
@@ -1149,7 +549,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
               openerTabDomId: tab.openerTab?.id || null,
               splitView: tab.hasAttribute("split-view"),
               splitGroupId: tabToGroupId.get(tab.id) || null,
-              pending: tab.hasAttribute("pending"),
             });
           }
           return results;
@@ -1251,11 +650,8 @@ this.zenWorkspaces = class extends ExtensionAPI {
             .filter(url => url !== "");
         },
 
-        // Coalesce bursts of tab events (page-load fires multiple URL
-        // changes) into a single attribute-update pass via the trailing-
-        // edge debounce in scheduleSyncDuplicates().
         async syncDuplicates() {
-          scheduleSyncDuplicates();
+          syncDuplicateAttributes();
         },
 
         async getTabInfo(domId) {
@@ -1458,75 +854,20 @@ this.zenWorkspaces = class extends ExtensionAPI {
           }
         },
 
-        // Palette management.
-        //
-        // Returns a discriminated object describing what happened:
-        //   {kind: "opened"}            — overlay opened (with main menu or a view)
-        //   {kind: "closed"}            — overlay was already open and got closed (toggle)
-        //   {kind: "chord-action",      — chord resolved to an action; caller should
-        //          actionId}              dispatch it via runChordAction
-        //   {kind: "chord-cancelled"}   — chord aborted (unknown key, Escape, blur)
-        //
-        // Callers:
-        //   - commands.onCommand passes no arg → routes through chord engine
-        //   - browserAction.onClicked passes {skipChord:true} → opens immediately
-        //   - any caller can pass a view string to open directly to a submenu
-        async showPalette(viewOrOpts) {
-          let view = null;
-          let skipChord = false;
-          if (typeof viewOrOpts === "string") {
-            view = viewOrOpts;
-            skipChord = true;
-          } else if (viewOrOpts && typeof viewOrOpts === "object") {
-            view = viewOrOpts.view || null;
-            skipChord = !!viewOrOpts.skipChord;
-          }
-
+        // Palette management
+        async showPalette(view) {
           if (isOverlayOpen()) {
             destroyOverlay();
-            return { kind: "closed" };
+            return false;
           }
-
-          // Double-tap of the leader (or a click while chord is armed):
-          // cancel the in-flight chord and open immediately.
-          if (chordState !== null) {
-            const resolve = chordResolve;
-            chordResolve = null;
-            disarmChord();
-            openOverlayWithView(view);
-            if (resolve) resolve({ kind: "opened" });
-            return { kind: "opened" };
-          }
-
-          if (skipChord) {
-            openOverlayWithView(view);
-            return { kind: "opened" };
-          }
-
-          return new Promise((resolve) => armChord(resolve));
+          pendingView = view || null;
+          createOverlay();
+          pendingView = null;
+          return true;
         },
 
         async hidePalette() {
           destroyOverlay();
-        },
-
-        async navigateToView(view, params) {
-          if (!isOverlayOpen()) return;
-          const parsed = params ? JSON.parse(params) : {};
-          navStack.push({ view: currentViewName, params: {} });
-          currentViewName = view;
-          morphToView(view, parsed);
-        },
-
-        async navigateBack() {
-          if (!isOverlayOpen()) return;
-          if (navStack.length === 0) {
-            destroyOverlay();
-            return;
-          }
-          const prev = navStack.pop();
-          currentViewName = prev.view;
-          morphToView(prev.view, prev.params);
         },
 
       },

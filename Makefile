@@ -7,31 +7,22 @@ SRC = manifest.json \
       popup/popup.html \
       popup/popup.js \
       popup/popup.css \
-      popup/state.js \
-      popup/render.js \
-      popup/keyboard.js \
-      $(wildcard popup/views/*.js) \
       options/options.html \
       options/options.js \
       options/options.css \
       welcome/welcome.html \
       welcome/welcome.js \
       welcome/welcome.css \
-      $(wildcard shared/*.js) \
-      $(wildcard lib/*.js) \
       $(wildcard icons/*.svg) \
       LICENSE
 
-.PHONY: build clean test
+.PHONY: build clean
 
 build: $(XPI)
 
 $(XPI): $(SRC)
 	rm -f $@
 	zip $@ $(SRC)
-
-test:
-	node --test tests/*.test.js
 
 clean:
 	rm -f $(XPI)

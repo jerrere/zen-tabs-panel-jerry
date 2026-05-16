@@ -1,41 +1,15 @@
 "use strict";
 
-const api = browser.zenWorkspaces;
-
-// ---------------------------------------------------------------------------
-// In-memory settings cache
-//
-// Avoids hitting browser.storage.local on every tab activation (and from the
-// 5-minute auto-close alarm). Populated once at startup, kept in sync via
-// storage.onChanged. The cache also gates whether the auto-close alarm even
-// exists — disabled means no idle work at all.
-// ---------------------------------------------------------------------------
-
-const settings = Object.assign({}, STORAGE_DEFAULTS);
-
-async function loadSettings() {
-  const stored = await browser.storage.local.get(STORAGE_DEFAULTS);
-  Object.assign(settings, stored);
-  syncAutoCloseAlarm();
-}
-
-browser.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local") return;
-  let autoCloseTouched = false;
-  for (const key of Object.keys(changes)) {
-    if (key in STORAGE_DEFAULTS) {
-      settings[key] = changes[key].newValue ?? STORAGE_DEFAULTS[key];
-      if (key === "autoCloseEnabled") autoCloseTouched = true;
-    }
-  }
-  if (autoCloseTouched) syncAutoCloseAlarm();
-});
-
 // ---------------------------------------------------------------------------
 // Auto-move to top — delayed move of the active tab to index 0
+//
+// NOTE: We track the "last user-activated" tab ID so that workspace switches
+// (which also fire onActivated) don't trigger auto-move for the tab that
+// Zen automatically selects when switching workspaces.
 // ---------------------------------------------------------------------------
 
 let autoMoveTimeout = null;
+let lastActiveTabId = null;
 
 function cancelAutoMove() {
   if (autoMoveTimeout !== null) {
@@ -86,6 +60,11 @@ const THRESHOLD_MS = {
 };
 
 async function autoCloseSweep() {
+  const settings = await browser.storage.local.get({
+    autoCloseEnabled: false,
+    autoCloseThreshold: "48h",
+  });
+
   if (!settings.autoCloseEnabled) return;
 
   const threshold = THRESHOLD_MS[settings.autoCloseThreshold] || THRESHOLD_MS["48h"];
@@ -94,7 +73,7 @@ async function autoCloseSweep() {
   // Use the experiment API to get tabs across all workspaces
   let tabs;
   try {
-    tabs = await api.getAllTabs();
+    tabs = await browser.zenWorkspaces.getAllTabs();
   } catch (e) {
     // Fallback to standard API (current workspace only)
     tabs = await browser.tabs.query({ pinned: false });
@@ -105,7 +84,7 @@ async function autoCloseSweep() {
     if (tab.active) continue;
     if (now - tab.lastAccessed > threshold) {
       try {
-        await api.closeTabByDomId(tab.domId);
+        await browser.zenWorkspaces.closeTabByDomId(tab.domId);
       } catch (e) {
         // Tab may already be gone
       }
@@ -113,17 +92,8 @@ async function autoCloseSweep() {
   }
 }
 
-// Create the alarm only when auto-close is enabled — when disabled (the
-// default) we want zero idle CPU. The alarm is added/removed in response to
-// settings changes via the storage.onChanged listener above.
-function syncAutoCloseAlarm() {
-  if (settings.autoCloseEnabled) {
-    browser.alarms.create("auto-close-sweep", { periodInMinutes: 5 });
-  } else {
-    browser.alarms.clear("auto-close-sweep");
-  }
-}
-
+// Set up alarm for auto-close sweep (every 5 minutes)
+browser.alarms.create("auto-close-sweep", { periodInMinutes: 5 });
 browser.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "auto-close-sweep") {
     autoCloseSweep();
@@ -134,7 +104,15 @@ browser.alarms.onAlarm.addListener((alarm) => {
 // Tab event listeners
 // ---------------------------------------------------------------------------
 
-browser.tabs.onActivated.addListener((activeInfo) => {
+browser.tabs.onActivated.addListener(async (activeInfo) => {
+  lastActiveTabId = activeInfo.tabId;
+
+  // Auto-move logic
+  const settings = await browser.storage.local.get({
+    autoMoveEnabled: false,
+    autoMoveDelay: 3000,
+  });
+
   if (settings.autoMoveEnabled) {
     scheduleAutoMove(activeInfo.tabId, settings.autoMoveDelay);
   } else {
@@ -147,25 +125,25 @@ browser.tabs.onActivated.addListener((activeInfo) => {
 // ---------------------------------------------------------------------------
 
 browser.tabs.onCreated.addListener(() => {
-  api.syncDuplicates();
+  browser.zenWorkspaces.syncDuplicates();
 });
 
 browser.tabs.onRemoved.addListener(() => {
-  api.syncDuplicates();
+  browser.zenWorkspaces.syncDuplicates();
 });
 
 browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) {
-    api.syncDuplicates();
+    browser.zenWorkspaces.syncDuplicates();
   }
 });
 
 // ---------------------------------------------------------------------------
-// Tab manipulation helpers
+// Command handlers
 //
-// goToPreviousTab and goToParentTab live in the experiment API (chrome
-// context with cross-workspace switching). The helpers below need standard
-// browser.tabs and depend on Zen's "essential" tab classification.
+// goToPreviousTab and goToParentTab are handled by the experiment API
+// (browser.zenWorkspaces) which operates in chrome context and supports
+// cross-workspace switching.
 // ---------------------------------------------------------------------------
 
 async function moveTabToStart() {
@@ -173,7 +151,7 @@ async function moveTabToStart() {
   if (!activeTab) return;
 
   const allTabs = await browser.tabs.query({ currentWindow: true });
-  const essentialIds = new Set(await api.getEssentialTabIds());
+  const essentialIds = new Set(await browser.zenWorkspaces.getEssentialTabIds());
 
   if (activeTab.pinned) {
     if (essentialIds.has(activeTab.id)) return;
@@ -192,7 +170,7 @@ async function moveTabToEnd() {
   if (!activeTab) return;
 
   if (activeTab.pinned) {
-    const essentialIds = new Set(await api.getEssentialTabIds());
+    const essentialIds = new Set(await browser.zenWorkspaces.getEssentialTabIds());
     if (essentialIds.has(activeTab.id)) return;
     const allTabs = await browser.tabs.query({ currentWindow: true });
     const pinnedTabs = allTabs.filter((t) => t.pinned);
@@ -203,294 +181,291 @@ async function moveTabToEnd() {
   }
 }
 
-async function scrollToCurrentTab() {
-  await api.scrollCurrentTabIntoView();
-}
-
-async function unloadActiveTab() {
-  const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!activeTab) return;
-
-  const parentResult = await api.goToParentTab();
-  if (!parentResult) {
-    await api.goToPreviousTab();
-  }
-
-  try {
-    await browser.tabs.discard(activeTab.id);
-  } catch (e) {}
-}
-
-const CLOSE_AND_SELECT_NAVS = {
-  // No-op navigation: just close the active tab and let the browser pick
-  // the successor (matches default Cmd+W behavior).
-  [MSG.CLOSE_AND_SELECT_DEFAULT]:        () => Promise.resolve(true),
-  [MSG.CLOSE_AND_SELECT_PREVIOUS]:       () => api.goToPreviousTab(),
-  [MSG.CLOSE_AND_SELECT_PARENT]:         () => api.goToParentTab(),
-  [MSG.CLOSE_AND_SELECT_NEXT_SIBLING]:   () => api.goToNextSibling(),
-  [MSG.CLOSE_AND_SELECT_PREV_SIBLING]:   () => api.goToPrevSibling(),
-  [MSG.CLOSE_AND_SELECT_NEXT_VERTICAL]:  () => api.goToNextVerticalTab(),
-  [MSG.CLOSE_AND_SELECT_PREV_VERTICAL]:  () => api.goToPrevVerticalTab(),
-};
-
-async function closeAndSelect(actionId) {
-  const navFn = CLOSE_AND_SELECT_NAVS[actionId];
-  if (!navFn) return;
-  const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-  if (!activeTab || activeTab.pinned) return;
-  const ok = await navFn();
-  if (!ok) return;
-  await browser.tabs.remove(activeTab.id);
-}
-
-async function openOptions() {
-  browser.runtime.openOptionsPage();
-}
-
-// ---------------------------------------------------------------------------
-// Sort actions
-// ---------------------------------------------------------------------------
-
-async function runSortAction(actionId) {
-  const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-  const allTabs = await browser.tabs.query({ currentWindow: true });
-  const essentialIds = new Set(await api.getEssentialTabIds());
-  const operateOnPinned = activeTab?.pinned && !essentialIds.has(activeTab?.id);
-
-  let tabs, startIndex;
-  if (operateOnPinned) {
-    const essentialCount = allTabs.filter((t) => essentialIds.has(t.id)).length;
-    tabs = allTabs.filter((t) => t.pinned && !essentialIds.has(t.id));
-    startIndex = essentialCount;
-  } else {
-    const pinnedCount = allTabs.filter((t) => t.pinned).length;
-    tabs = allTabs.filter((t) => !t.pinned);
-    startIndex = pinnedCount;
-  }
-
-  // Comparators and group helpers come from lib/tab-sort.js.
-  switch (actionId) {
-    case MSG.SORT_TABS_RECENT_DESC:
-      tabs.sort(compareByRecentDesc);
-      break;
-    case MSG.SORT_TABS_RECENT_ASC:
-      tabs.sort(compareByRecentAsc);
-      break;
-    case MSG.SORT_TABS_DOMAIN_ALPHA:
-      tabs.sort(compareByDomainAlpha);
-      break;
-    case MSG.SORT_TABS_DOMAIN_POP:
-      tabs.sort(makeCompareByDomainPop(buildDomainCounts(tabs)));
-      break;
-    case MSG.SORT_TABS_AGE_ASC:
-      tabs.sort(compareByAgeAsc);
-      break;
-    case MSG.SORT_TABS_AGE_DESC:
-      tabs.sort(compareByAgeDesc);
-      break;
-    case MSG.SORT_TABS_INACTIVE_BOTTOM:
-      tabs.sort(compareInactiveBottom);
-      break;
-    case MSG.SORT_TABS_MOST_VISITED: {
-      const uniqueUrls = [...new Set(tabs.map((t) => t.url))];
-      const visitCounts = {};
-      await Promise.all(uniqueUrls.map((url) =>
-        browser.history.getVisits({ url }).then(
-          (visits) => { visitCounts[url] = visits.length; },
-          () => { visitCounts[url] = 0; }
-        )
-      ));
-      tabs.sort(makeCompareByVisits(visitCounts));
-      break;
-    }
-    case MSG.SORT_TABS_GROUP_DUPS: {
-      const grouped = groupDuplicatesFirst(tabs);
-      tabs.length = 0;
-      tabs.push(...grouped);
-      break;
-    }
-  }
-
-  await browser.tabs.move(tabs.map((t) => t.id), { index: startIndex });
-}
-
-// ---------------------------------------------------------------------------
-// Action dispatch table
-//
-// Single source of truth for "what does this message-type do?". Used by
-// both the runtime.onMessage listener (with a hide-palette prelude) and
-// runChordAction (which fires shortcuts directly without opening the
-// palette). Each handler takes the message object and returns a promise.
-// ---------------------------------------------------------------------------
-
-async function getActiveTabInfo() {
-  const allTabs = await api.getAllTabs();
-  const activeTab = allTabs.find((t) => t.active);
-  return { hasParent: !!(activeTab && activeTab.openerTabDomId) };
-}
-
-function getRecentlyClosed() {
-  return browser.sessions.getRecentlyClosed({ maxResults: 25 }).then((sessions) =>
-    sessions
-      .filter((s) => s.tab)
-      .map((s) => ({
-        sessionId: s.tab.sessionId,
-        title: s.tab.title || "",
-        url: s.tab.url || "",
-        favIconUrl: s.tab.favIconUrl || "",
-        lastModified: s.lastModified || 0,
-      }))
-  );
-}
-
-const ACTIONS = Object.freeze({
-  [MSG.OPEN_OPTIONS]:                     ()  => openOptions(),
-  [MSG.ACTIVATE_TAB]:                     (m) => api.activateTabByDomId(m.domId),
-  [MSG.GO_TO_PREVIOUS_TAB]:               ()  => api.goToPreviousTab(),
-  [MSG.GO_TO_PARENT_TAB]:                 ()  => api.goToParentTab(),
-  [MSG.MOVE_TAB_TO_START]:                ()  => moveTabToStart(),
-  [MSG.MOVE_TAB_TO_END]:                  ()  => moveTabToEnd(),
-  [MSG.SCROLL_TO_CURRENT_TAB]:            ()  => scrollToCurrentTab(),
-  [MSG.UNLOAD_TAB]:                       ()  => unloadActiveTab(),
-  [MSG.GO_TO_NEXT_WORKSPACE]:             ()  => api.goToNextWorkspace(),
-  [MSG.GO_TO_PREV_WORKSPACE]:             ()  => api.goToPrevWorkspace(),
-  [MSG.TOGGLE_PIN_TAB]:                   ()  => api.togglePinTab(),
-  [MSG.COPY_URL_MARKDOWN]:                ()  => api.copyCurrentUrlMarkdown(),
-  [MSG.RESTORE_LAST_CLOSED_TAB]:          ()  => api.restoreLastClosedTab(),
-  [MSG.SPLIT_NEW]:                        ()  => api.splitNew(),
-  [MSG.SPLIT_CLOSE]:                      ()  => api.splitClose(),
-  [MSG.SPLIT_HORIZONTAL]:                 ()  => api.splitHorizontal(),
-  [MSG.SPLIT_VERTICAL]:                   ()  => api.splitVertical(),
-  [MSG.GO_BACK_IN_TAB]:                   ()  => api.goBackInTab(),
-  [MSG.GO_FORWARD_IN_TAB]:                ()  => api.goForwardInTab(),
-  [MSG.GO_TO_NEXT_VERTICAL_TAB]:          ()  => api.goToNextVerticalTab(),
-  [MSG.GO_TO_PREV_VERTICAL_TAB]:          ()  => api.goToPrevVerticalTab(),
-  [MSG.RESTORE_CLOSED_TAB]:               (m) => browser.sessions.restore(m.sessionId).catch(() => {}),
-  [MSG.NAVIGATE_TO_HISTORY_INDEX]:        (m) => api.navigateToHistoryIndex(m.index),
-  [MSG.SWITCH_WORKSPACE]:                 (m) => api.switchTo(m.workspaceId),
-  [MSG.MOVE_SELECTED_TABS_TO_WORKSPACE]:  (m) => api.moveSelectedTabsToWorkspace(m.workspaceId),
-
-  // Close-and-select submenu — all dispatch through closeAndSelect(actionId).
-  [MSG.CLOSE_AND_SELECT_DEFAULT]:         (m) => closeAndSelect(m.type),
-  [MSG.CLOSE_AND_SELECT_PREVIOUS]:        (m) => closeAndSelect(m.type),
-  [MSG.CLOSE_AND_SELECT_PARENT]:          (m) => closeAndSelect(m.type),
-  [MSG.CLOSE_AND_SELECT_NEXT_SIBLING]:    (m) => closeAndSelect(m.type),
-  [MSG.CLOSE_AND_SELECT_PREV_SIBLING]:    (m) => closeAndSelect(m.type),
-  [MSG.CLOSE_AND_SELECT_NEXT_VERTICAL]:   (m) => closeAndSelect(m.type),
-  [MSG.CLOSE_AND_SELECT_PREV_VERTICAL]:   (m) => closeAndSelect(m.type),
-
-  // Sort actions — all dispatch through runSortAction(actionId).
-  [MSG.SORT_TABS_RECENT_DESC]:            (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_RECENT_ASC]:             (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_DOMAIN_ALPHA]:           (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_DOMAIN_POP]:             (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_AGE_ASC]:                (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_AGE_DESC]:               (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_INACTIVE_BOTTOM]:        (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_MOST_VISITED]:           (m) => runSortAction(m.type),
-  [MSG.SORT_TABS_GROUP_DUPS]:             (m) => runSortAction(m.type),
-});
-
-// Reply-style queries — listener returns the promise so the popup awaits
-// the result. Must NOT include a hide-palette prelude (hiding the palette
-// destroys the caller's content browser before it can read the response).
-const QUERIES = Object.freeze({
-  [MSG.GET_ALL_TABS]:                  ()  => api.getAllTabs(),
-  [MSG.GET_DEFAULT_CLOSE_TARGET]:      ()  => api.getDefaultCloseTargetDomId(),
-  [MSG.GET_ACTIVE_TAB_INFO]:           ()  => getActiveTabInfo(),
-  [MSG.GET_NAVIGATION_HISTORY]:        ()  => api.getNavigationHistory(),
-  [MSG.GET_RECENTLY_CLOSED]:           ()  => getRecentlyClosed(),
-  [MSG.GET_TAB_INFO]:                  (m) => api.getTabInfo(m.domId),
-  [MSG.GET_HISTORY_VISITS]:            (m) => browser.history.getVisits({ url: m.url }),
-  [MSG.GET_SELECTED_TAB_DOM_IDS]:      ()  => api.getSelectedTabDomIds(),
-  [MSG.GET_SELECTED_TAB_URLS]:         ()  => api.getSelectedTabUrls(),
-  [MSG.GET_WORKSPACES_WITH_ICONS]:     ()  => api.getWorkspacesWithIcons(),
-  [MSG.CHECK_COMPANION_MOD]:           ()  => api.getCompanionMods(),
-  [MSG.INSTALL_COMPANION_MOD]:         (m) => api.installCompanionMod(m.modId),
-  [MSG.REMOVE_COMPANION_MOD]:          (m) => api.removeCompanionMod(m.modId),
-});
-
-// Synchronous fire-and-forget messages that do NOT hide the palette
-// (palette UI uses these for live updates: preview hover, navigate-view,
-// etc.). Kept separate from ACTIONS so we don't accidentally race the
-// palette out from under the user.
-const SYNC_HANDLERS = Object.freeze({
-  [MSG.HIDE_PALETTE]:    ()  => api.hidePalette(),
-  [MSG.NAVIGATE_VIEW]:   (m) => {
-    if (!VIEW_IDS.has(m.view)) {
-      console.warn("Ignoring navigate-view with unknown view:", m.view);
-      return;
-    }
-    return api.navigateToView(m.view, m.params);
-  },
-  [MSG.NAVIGATE_BACK]:   ()  => api.navigateBack(),
-  [MSG.PREVIEW_TAB]:     (m) => api.previewTab(m.domId),
-  [MSG.CLEAR_PREVIEW]:   ()  => api.clearPreview(),
-  [MSG.CLOSE_TAB]:       (m) => api.closeTabByDomId(m.domId),
-});
-
-// Hide palette, then run an action. Used by the message handler to keep
-// the palette responsive (closes immediately, action runs after).
-async function hideAndDo(fn) {
-  await api.hidePalette();
-  return fn();
-}
-
-// Run an action triggered via a chord shortcut. The palette never opened
-// in this path, so we skip the hide-palette prelude. Reuses the ACTIONS
-// table for parity with palette-driven dispatch.
-async function runChordAction(actionId) {
-  const handler = ACTIONS[actionId];
-  if (!handler) return;
-  await handler({ type: actionId });
-}
-
-async function handleOpenPaletteRequest() {
-  const result = await api.showPalette();
-  if (result && result.kind === "chord-action") {
-    await runChordAction(result.actionId);
-  }
-}
-
-browser.commands.onCommand.addListener(async (command) => {
+browser.commands.onCommand.addListener((command) => {
   switch (command) {
     case "open-palette":
-      await handleOpenPaletteRequest();
+      browser.zenWorkspaces.showPalette();
       break;
     case "go-to-previous-tab":
-      await api.goToPreviousTab();
+      browser.zenWorkspaces.goToPreviousTab();
       break;
   }
 });
 
-// Chrome-side gesture (double-tap Cmd) — see experiment/api.js.
-api.onPaletteRequest.addListener(handleOpenPaletteRequest);
-
-// Toolbar icon click opens the palette immediately, bypassing chord-arming.
+// Toolbar icon click opens the palette
 browser.browserAction.onClicked.addListener(() => {
-  api.showPalette({ skipChord: true });
+  browser.zenWorkspaces.showPalette();
 });
 
 // ---------------------------------------------------------------------------
-// Message handler
+// Message handler — popup can request data/actions from background
 // ---------------------------------------------------------------------------
 
-browser.runtime.onMessage.addListener((message) => {
-  const type = message.type;
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  switch (message.type) {
+    case "hide-palette":
+      browser.zenWorkspaces.hidePalette();
+      break;
 
-  const query = QUERIES[type];
-  if (query) return query(message);
+    case "open-options":
+      browser.zenWorkspaces.hidePalette();
+      browser.runtime.openOptionsPage();
+      break;
 
-  const action = ACTIONS[type];
-  if (action) {
-    hideAndDo(() => action(message));
-    return;
-  }
+    case "activate-tab":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.activateTabByDomId(message.domId);
+      })();
+      break;
 
-  const sync = SYNC_HANDLERS[type];
-  if (sync) {
-    sync(message);
-    return;
+    case "get-all-tabs":
+      return browser.zenWorkspaces.getAllTabs();
+
+    case "get-active-tab-info": {
+      // Check if the current tab has a parent (opener) tab
+      const promise = (async () => {
+        const allTabs = await browser.zenWorkspaces.getAllTabs();
+        const activeTab = allTabs.find((t) => t.active);
+        return {
+          hasParent: !!(activeTab && activeTab.openerTabDomId),
+        };
+      })();
+      return promise;
+    }
+
+    case "go-to-previous-tab":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.goToPreviousTab();
+      })();
+      break;
+
+    case "go-to-parent-tab":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.goToParentTab();
+      })();
+      break;
+
+    case "move-tab-to-start":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await moveTabToStart();
+      })();
+      break;
+
+    case "move-tab-to-end":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await moveTabToEnd();
+      })();
+      break;
+
+    case "scroll-to-current-tab":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.scrollCurrentTabIntoView();
+      })();
+      break;
+
+    case "unload-tab": {
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+        if (!activeTab) return;
+
+        const parentResult = await browser.zenWorkspaces.goToParentTab();
+        if (!parentResult) {
+          await browser.zenWorkspaces.goToPreviousTab();
+        }
+
+        try {
+          await browser.tabs.discard(activeTab.id);
+        } catch (e) {}
+      })();
+      break;
+    }
+
+    case "get-navigation-history":
+      return browser.zenWorkspaces.getNavigationHistory();
+
+    case "navigate-to-history-index":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.navigateToHistoryIndex(message.index);
+      })();
+      break;
+
+    case "switch-workspace":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.switchTo(message.workspaceId);
+      })();
+      break;
+
+    case "sort-tabs-recent-desc":
+    case "sort-tabs-recent-asc":
+    case "sort-tabs-domain-alpha":
+    case "sort-tabs-domain-pop":
+    case "sort-tabs-age-asc":
+    case "sort-tabs-age-desc":
+    case "sort-tabs-inactive-bottom":
+    case "sort-tabs-most-visited":
+    case "sort-tabs-group-dups": {
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
+        const allTabs = await browser.tabs.query({ currentWindow: true });
+        const essentialIds = new Set(await browser.zenWorkspaces.getEssentialTabIds());
+        const operateOnPinned = activeTab?.pinned && !essentialIds.has(activeTab?.id);
+
+        let tabs, startIndex;
+        if (operateOnPinned) {
+          const essentialCount = allTabs.filter((t) => essentialIds.has(t.id)).length;
+          tabs = allTabs.filter((t) => t.pinned && !essentialIds.has(t.id));
+          startIndex = essentialCount;
+        } else {
+          const pinnedCount = allTabs.filter((t) => t.pinned).length;
+          tabs = allTabs.filter((t) => !t.pinned);
+          startIndex = pinnedCount;
+        }
+
+        const getDomain = (url) => { try { return new URL(url).hostname; } catch (e) { return ""; } };
+
+        switch (message.type) {
+          case "sort-tabs-recent-desc":
+            tabs.sort((a, b) => b.lastAccessed - a.lastAccessed);
+            break;
+          case "sort-tabs-recent-asc":
+            tabs.sort((a, b) => a.lastAccessed - b.lastAccessed);
+            break;
+          case "sort-tabs-domain-alpha":
+            tabs.sort((a, b) => getDomain(a.url).localeCompare(getDomain(b.url)) || b.lastAccessed - a.lastAccessed);
+            break;
+          case "sort-tabs-domain-pop": {
+            const domainCounts = {};
+            for (const t of tabs) {
+              const d = getDomain(t.url);
+              domainCounts[d] = (domainCounts[d] || 0) + 1;
+            }
+            tabs.sort((a, b) => (domainCounts[getDomain(b.url)] || 0) - (domainCounts[getDomain(a.url)] || 0) || b.lastAccessed - a.lastAccessed);
+            break;
+          }
+          case "sort-tabs-age-asc":
+            tabs.sort((a, b) => a.id - b.id);
+            break;
+          case "sort-tabs-age-desc":
+            tabs.sort((a, b) => b.id - a.id);
+            break;
+          case "sort-tabs-inactive-bottom":
+            tabs.sort((a, b) => (a.discarded ? 1 : 0) - (b.discarded ? 1 : 0));
+            break;
+          case "sort-tabs-most-visited": {
+            const uniqueUrls = [...new Set(tabs.map((t) => t.url))];
+            const visitCounts = {};
+            await Promise.all(uniqueUrls.map((url) =>
+              browser.history.getVisits({ url }).then(
+                (visits) => { visitCounts[url] = visits.length; },
+                () => { visitCounts[url] = 0; }
+              )
+            ));
+            tabs.sort((a, b) => (visitCounts[b.url] || 0) - (visitCounts[a.url] || 0));
+            break;
+          }
+          case "sort-tabs-group-dups": {
+            const urlCount = {};
+            for (const t of tabs) urlCount[t.url] = (urlCount[t.url] || 0) + 1;
+            const dups = [];
+            const nonDups = [];
+            for (const t of tabs) {
+              if (urlCount[t.url] > 1) {
+                dups.push(t);
+              } else {
+                nonDups.push(t);
+              }
+            }
+            dups.sort((a, b) => a.url.localeCompare(b.url));
+            tabs.length = 0;
+            tabs.push(...dups, ...nonDups);
+            break;
+          }
+        }
+
+        await browser.tabs.move(tabs.map((t) => t.id), { index: startIndex });
+      })();
+      break;
+    }
+
+    case "sort-tabs-by-recent": {
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        const allTabs = await browser.tabs.query({ currentWindow: true });
+        const pinnedCount = allTabs.filter((t) => t.pinned).length;
+        const tabs = allTabs.filter((t) => !t.pinned);
+        tabs.sort((a, b) => b.lastAccessed - a.lastAccessed);
+        await browser.tabs.move(tabs.map((t) => t.id), { index: pinnedCount });
+      })();
+      break;
+    }
+
+    case "sort-tabs-by-domain": {
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        const allTabs = await browser.tabs.query({ currentWindow: true });
+        const pinnedCount = allTabs.filter((t) => t.pinned).length;
+        const tabs = allTabs.filter((t) => !t.pinned);
+        tabs.sort((a, b) => {
+          try { return new URL(a.url).hostname.localeCompare(new URL(b.url).hostname); }
+          catch (e) { return 0; }
+        });
+        await browser.tabs.move(tabs.map((t) => t.id), { index: pinnedCount });
+      })();
+      break;
+    }
+
+    case "preview-tab":
+      browser.zenWorkspaces.previewTab(message.domId);
+      break;
+
+    case "clear-preview":
+      browser.zenWorkspaces.clearPreview();
+      break;
+
+    case "close-tab":
+      browser.zenWorkspaces.closeTabByDomId(message.domId);
+      break;
+
+    case "get-tab-info":
+      return browser.zenWorkspaces.getTabInfo(message.domId);
+
+    case "get-history-visits":
+      return browser.history.getVisits({ url: message.url });
+
+    case "get-selected-tab-dom-ids":
+      return browser.zenWorkspaces.getSelectedTabDomIds();
+
+    case "get-selected-tab-urls":
+      return browser.zenWorkspaces.getSelectedTabUrls();
+
+    case "get-workspaces-with-icons":
+      return browser.zenWorkspaces.getWorkspacesWithIcons();
+
+    case "move-selected-tabs-to-workspace":
+      (async () => {
+        await browser.zenWorkspaces.hidePalette();
+        await browser.zenWorkspaces.moveSelectedTabsToWorkspace(message.workspaceId);
+      })();
+      break;
+
+    case "check-companion-mod":
+      return browser.zenWorkspaces.getCompanionMods();
+
+    case "install-companion-mod":
+      return browser.zenWorkspaces.installCompanionMod(message.modId);
+
+    case "remove-companion-mod":
+      return browser.zenWorkspaces.removeCompanionMod(message.modId);
   }
 });
 
@@ -507,32 +482,30 @@ browser.menus.create({
 
 browser.menus.onShown.addListener(async (info) => {
   if (!info.contexts.includes("tab")) return;
-  const urls = await api.getSelectedTabUrls();
+  const urls = await browser.zenWorkspaces.getSelectedTabUrls();
   browser.menus.update("copy-selected-urls", { visible: urls.length > 1 });
   browser.menus.refresh();
 });
 
 browser.menus.onClicked.addListener(async (info) => {
   if (info.menuItemId !== "copy-selected-urls") return;
-  const urls = await api.getSelectedTabUrls();
+  const urls = await browser.zenWorkspaces.getSelectedTabUrls();
   if (urls.length > 0) {
     navigator.clipboard.writeText(urls.join("\n"));
   }
 });
 
 // ---------------------------------------------------------------------------
-// Initialize — populate the settings cache, trigger experiment API load
-// (it's lazy, only loads on first access), and start the duplicate sync.
+// Initialize — trigger experiment API load (it's lazy, only loads on first access)
 // ---------------------------------------------------------------------------
 
-loadSettings();
-api.getActiveWorkspaceId().catch(() => {});
-api.syncDuplicates().catch(() => {});
+browser.zenWorkspaces.getActiveWorkspaceId().catch(() => {});
+browser.zenWorkspaces.syncDuplicates().catch(() => {});
 
 // Show welcome page on first install
 browser.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === "install") {
-    const { welcomed } = await browser.storage.local.get({ welcomed: STORAGE_DEFAULTS.welcomed });
+    const { welcomed } = await browser.storage.local.get({ welcomed: false });
     if (!welcomed) {
       await browser.storage.local.set({ welcomed: true });
       browser.tabs.create({ url: browser.runtime.getURL("welcome/welcome.html") });
