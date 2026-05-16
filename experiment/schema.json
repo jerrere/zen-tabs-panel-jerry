@@ -59,118 +59,6 @@
         "parameters": []
       },
       {
-        "name": "goToNextSibling",
-        "type": "function",
-        "async": true,
-        "description": "Activate the next sibling tab (next tab sharing the same opener)",
-        "parameters": []
-      },
-      {
-        "name": "goToPrevSibling",
-        "type": "function",
-        "async": true,
-        "description": "Activate the previous sibling tab (previous tab sharing the same opener)",
-        "parameters": []
-      },
-      {
-        "name": "goToNextVerticalTab",
-        "type": "function",
-        "async": true,
-        "description": "Activate the tab immediately below the current one in the vertical bar (same workspace)",
-        "parameters": []
-      },
-      {
-        "name": "goToPrevVerticalTab",
-        "type": "function",
-        "async": true,
-        "description": "Activate the tab immediately above the current one in the vertical bar (same workspace)",
-        "parameters": []
-      },
-      {
-        "name": "getDefaultCloseTargetDomId",
-        "type": "function",
-        "async": true,
-        "description": "Return the DOM id of the tab the browser would focus if the active tab were closed right now (default Cmd+W successor)",
-        "parameters": []
-      },
-      {
-        "name": "goToNextWorkspace",
-        "type": "function",
-        "async": true,
-        "description": "Switch to the next workspace (with wraparound)",
-        "parameters": []
-      },
-      {
-        "name": "goToPrevWorkspace",
-        "type": "function",
-        "async": true,
-        "description": "Switch to the previous workspace (with wraparound)",
-        "parameters": []
-      },
-      {
-        "name": "togglePinTab",
-        "type": "function",
-        "async": true,
-        "description": "Toggle pinned state of the active tab. Refuses to act on Essentials.",
-        "parameters": []
-      },
-      {
-        "name": "copyCurrentUrlMarkdown",
-        "type": "function",
-        "async": true,
-        "description": "Copy the active tab's URL to the clipboard as a Markdown link [title](url)",
-        "parameters": []
-      },
-      {
-        "name": "restoreLastClosedTab",
-        "type": "function",
-        "async": true,
-        "description": "Restore the most recently closed tab in this window via SessionStore",
-        "parameters": []
-      },
-      {
-        "name": "splitNew",
-        "type": "function",
-        "async": true,
-        "description": "Open a new empty split next to the current tab",
-        "parameters": []
-      },
-      {
-        "name": "splitClose",
-        "type": "function",
-        "async": true,
-        "description": "Close the current split view (no-op if no split active)",
-        "parameters": []
-      },
-      {
-        "name": "splitHorizontal",
-        "type": "function",
-        "async": true,
-        "description": "Toggle/set split orientation to horizontal divider (top/bottom panes)",
-        "parameters": []
-      },
-      {
-        "name": "splitVertical",
-        "type": "function",
-        "async": true,
-        "description": "Toggle/set split orientation to vertical divider (side-by-side panes)",
-        "parameters": []
-      },
-      {
-        "name": "goBackInTab",
-        "type": "function",
-        "async": true,
-        "description": "Navigate the active tab one step back in its session history",
-        "parameters": []
-      },
-      {
-        "name": "goForwardInTab",
-        "type": "function",
-        "async": true,
-        "description": "Navigate the active tab one step forward in its session history",
-        "parameters": []
-      },
-      {
         "name": "closeTabByDomId",
         "type": "function",
         "async": true,
@@ -307,9 +195,9 @@
         "name": "showPalette",
         "type": "function",
         "async": true,
-        "description": "Toggle the command palette overlay. Without args, arms the chord engine for 250ms then opens the main menu on timeout. Pass a view name string or {view, skipChord} object to open immediately. Returns a discriminated object: {kind:'opened'|'closed'|'chord-action'|'chord-cancelled', actionId?: string}.",
+        "description": "Toggle the command palette overlay. Returns true if opened, false if closed.",
         "parameters": [
-          { "name": "viewOrOpts", "type": "any", "optional": true }
+          { "name": "view", "type": "string", "optional": true }
         ]
       },
       {
@@ -317,31 +205,6 @@
         "type": "function",
         "async": true,
         "description": "Close the command palette overlay",
-        "parameters": []
-      },
-      {
-        "name": "navigateToView",
-        "type": "function",
-        "async": true,
-        "description": "Navigate the palette to a different view with morph animation",
-        "parameters": [
-          { "name": "view", "type": "string" },
-          { "name": "params", "type": "string", "optional": true }
-        ]
-      },
-      {
-        "name": "navigateBack",
-        "type": "function",
-        "async": true,
-        "description": "Navigate back in the palette view stack, or close if at root",
-        "parameters": []
-      }
-    ],
-    "events": [
-      {
-        "name": "onPaletteRequest",
-        "type": "function",
-        "description": "Fires when the user invokes the palette via a chrome-side gesture (e.g. double-tap Cmd). Background listens and runs the same flow as browser.commands.onCommand for open-palette.",
         "parameters": []
       }
     ]
