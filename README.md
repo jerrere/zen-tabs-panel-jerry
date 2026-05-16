@@ -1,6 +1,6 @@
 # Zen Tabs Panel
 
-**Version 0.3.0** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
+**Version 0.3.1** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
 
 A keyboard-driven tab management extension for [Zen Browser](https://zen-browser.app/) with a command palette UI and optional companion Zen Mods.
 
@@ -46,7 +46,9 @@ A keyboard-driven tab management extension for [Zen Browser](https://zen-browser
 
 **Double-tap Cmd** — the primary way to open the palette. Tap the Cmd key twice within ~350 ms (no other keys in between) and the palette opens. This is detected entirely in chrome scope, not registered as a global shortcut, so it doesn't conflict with macOS defaults (Spotlight, emoji picker, Finder search) or with apps that grab `Ctrl+Opt+*`. Normal `Cmd+letter` shortcuts (like `Cmd+T`, `Cmd+W`, `Cmd+L`) won't false-trigger it because the gesture only counts releases of Cmd that were never combined with another key.
 
-Press `Ctrl+Cmd+.` as a fallback to open the palette (this is the registered keybinding in `about:addons` > Manage Extension Shortcuts and can be changed there). From the palette, use single-key shortcuts to navigate:
+Press `Ctrl+Alt+.` on Windows/Linux or `Ctrl+Cmd+.` on macOS as a fallback to open the palette (this is the registered keybinding in `about:addons` > Manage Extension Shortcuts and can be changed there). From the palette, use single-key shortcuts to navigate:
+
+This fork also restores an independent `Previous tab (last-active)` shortcut. It appears as `Go to previous tab` in `about:addons` > Manage Extension Shortcuts and defaults to `Ctrl+Alt+P` on Windows/Linux or `Ctrl+Cmd+P` on macOS.
 
 The main menu groups actions into columns:
 

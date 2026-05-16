@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zen Tabs Panel",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Tab management command palette and utilities for Zen Browser",
   "author": "c13v",
 
@@ -51,8 +51,18 @@
 
   "commands": {
     "open-palette": {
-      "suggested_key": { "default": "MacCtrl+Command+Period" },
+      "suggested_key": {
+        "default": "Ctrl+Alt+Period",
+        "mac": "MacCtrl+Command+Period"
+      },
       "description": "Open tab actions palette"
+    },
+    "go-to-previous-tab": {
+      "suggested_key": {
+        "default": "Ctrl+Alt+P",
+        "mac": "MacCtrl+Command+P"
+      },
+      "description": "Go to previous tab"
     }
   },
 

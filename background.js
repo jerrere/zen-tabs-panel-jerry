@@ -453,8 +453,14 @@ async function handleOpenPaletteRequest() {
 }
 
 browser.commands.onCommand.addListener(async (command) => {
-  if (command !== "open-palette") return;
-  await handleOpenPaletteRequest();
+  switch (command) {
+    case "open-palette":
+      await handleOpenPaletteRequest();
+      break;
+    case "go-to-previous-tab":
+      await api.goToPreviousTab();
+      break;
+  }
 });
 
 // Chrome-side gesture (double-tap Cmd) — see experiment/api.js.
