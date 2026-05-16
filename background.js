@@ -181,6 +181,89 @@ async function moveTabToEnd() {
   }
 }
 
+async function sortCurrentWorkspaceTabs(sortAction) {
+  const [activeWorkspaceId, allTabs, essentialIds] = await Promise.all([
+    browser.zenWorkspaces.getActiveWorkspaceId(),
+    browser.zenWorkspaces.getAllTabs(),
+    browser.zenWorkspaces.getEssentialTabIds(),
+  ]);
+  const essentialIdSet = new Set(essentialIds);
+  const activeTab = allTabs.find((t) => t.active);
+  const workspaceTabs = activeWorkspaceId
+    ? allTabs.filter((t) => t.workspaceId === activeWorkspaceId)
+    : allTabs;
+  const operateOnPinned = activeTab?.pinned && !essentialIdSet.has(activeTab?.id);
+
+  const tabs = operateOnPinned
+    ? workspaceTabs.filter((t) => t.pinned && !essentialIdSet.has(t.id))
+    : workspaceTabs.filter((t) => !t.pinned);
+
+  if (tabs.length <= 1) return;
+
+  const getDomain = (url) => { try { return new URL(url).hostname; } catch (e) { return ""; } };
+
+  switch (sortAction) {
+    case "sort-tabs-recent-desc":
+      tabs.sort((a, b) => b.lastAccessed - a.lastAccessed);
+      break;
+    case "sort-tabs-recent-asc":
+      tabs.sort((a, b) => a.lastAccessed - b.lastAccessed);
+      break;
+    case "sort-tabs-domain-alpha":
+      tabs.sort((a, b) => getDomain(a.url).localeCompare(getDomain(b.url)) || b.lastAccessed - a.lastAccessed);
+      break;
+    case "sort-tabs-domain-pop": {
+      const domainCounts = {};
+      for (const t of tabs) {
+        const d = getDomain(t.url);
+        domainCounts[d] = (domainCounts[d] || 0) + 1;
+      }
+      tabs.sort((a, b) => (domainCounts[getDomain(b.url)] || 0) - (domainCounts[getDomain(a.url)] || 0) || b.lastAccessed - a.lastAccessed);
+      break;
+    }
+    case "sort-tabs-age-asc":
+      tabs.sort((a, b) => a.id - b.id);
+      break;
+    case "sort-tabs-age-desc":
+      tabs.sort((a, b) => b.id - a.id);
+      break;
+    case "sort-tabs-inactive-bottom":
+      tabs.sort((a, b) => (a.discarded ? 1 : 0) - (b.discarded ? 1 : 0));
+      break;
+    case "sort-tabs-most-visited": {
+      const uniqueUrls = [...new Set(tabs.map((t) => t.url))];
+      const visitCounts = {};
+      await Promise.all(uniqueUrls.map((url) =>
+        browser.history.getVisits({ url }).then(
+          (visits) => { visitCounts[url] = visits.length; },
+          () => { visitCounts[url] = 0; }
+        )
+      ));
+      tabs.sort((a, b) => (visitCounts[b.url] || 0) - (visitCounts[a.url] || 0));
+      break;
+    }
+    case "sort-tabs-group-dups": {
+      const urlCount = {};
+      for (const t of tabs) urlCount[t.url] = (urlCount[t.url] || 0) + 1;
+      const dups = [];
+      const nonDups = [];
+      for (const t of tabs) {
+        if (urlCount[t.url] > 1) {
+          dups.push(t);
+        } else {
+          nonDups.push(t);
+        }
+      }
+      dups.sort((a, b) => a.url.localeCompare(b.url));
+      tabs.length = 0;
+      tabs.push(...dups, ...nonDups);
+      break;
+    }
+  }
+
+  await browser.zenWorkspaces.reorderTabsByDomIds(tabs.map((t) => t.domId));
+}
+
 browser.commands.onCommand.addListener((command) => {
   switch (command) {
     case "open-palette":
@@ -315,84 +398,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "sort-tabs-group-dups": {
       (async () => {
         await browser.zenWorkspaces.hidePalette();
-        const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-        const allTabs = await browser.tabs.query({ currentWindow: true });
-        const essentialIds = new Set(await browser.zenWorkspaces.getEssentialTabIds());
-        const operateOnPinned = activeTab?.pinned && !essentialIds.has(activeTab?.id);
-
-        let tabs, startIndex;
-        if (operateOnPinned) {
-          const essentialCount = allTabs.filter((t) => essentialIds.has(t.id)).length;
-          tabs = allTabs.filter((t) => t.pinned && !essentialIds.has(t.id));
-          startIndex = essentialCount;
-        } else {
-          const pinnedCount = allTabs.filter((t) => t.pinned).length;
-          tabs = allTabs.filter((t) => !t.pinned);
-          startIndex = pinnedCount;
-        }
-
-        const getDomain = (url) => { try { return new URL(url).hostname; } catch (e) { return ""; } };
-
-        switch (message.type) {
-          case "sort-tabs-recent-desc":
-            tabs.sort((a, b) => b.lastAccessed - a.lastAccessed);
-            break;
-          case "sort-tabs-recent-asc":
-            tabs.sort((a, b) => a.lastAccessed - b.lastAccessed);
-            break;
-          case "sort-tabs-domain-alpha":
-            tabs.sort((a, b) => getDomain(a.url).localeCompare(getDomain(b.url)) || b.lastAccessed - a.lastAccessed);
-            break;
-          case "sort-tabs-domain-pop": {
-            const domainCounts = {};
-            for (const t of tabs) {
-              const d = getDomain(t.url);
-              domainCounts[d] = (domainCounts[d] || 0) + 1;
-            }
-            tabs.sort((a, b) => (domainCounts[getDomain(b.url)] || 0) - (domainCounts[getDomain(a.url)] || 0) || b.lastAccessed - a.lastAccessed);
-            break;
-          }
-          case "sort-tabs-age-asc":
-            tabs.sort((a, b) => a.id - b.id);
-            break;
-          case "sort-tabs-age-desc":
-            tabs.sort((a, b) => b.id - a.id);
-            break;
-          case "sort-tabs-inactive-bottom":
-            tabs.sort((a, b) => (a.discarded ? 1 : 0) - (b.discarded ? 1 : 0));
-            break;
-          case "sort-tabs-most-visited": {
-            const uniqueUrls = [...new Set(tabs.map((t) => t.url))];
-            const visitCounts = {};
-            await Promise.all(uniqueUrls.map((url) =>
-              browser.history.getVisits({ url }).then(
-                (visits) => { visitCounts[url] = visits.length; },
-                () => { visitCounts[url] = 0; }
-              )
-            ));
-            tabs.sort((a, b) => (visitCounts[b.url] || 0) - (visitCounts[a.url] || 0));
-            break;
-          }
-          case "sort-tabs-group-dups": {
-            const urlCount = {};
-            for (const t of tabs) urlCount[t.url] = (urlCount[t.url] || 0) + 1;
-            const dups = [];
-            const nonDups = [];
-            for (const t of tabs) {
-              if (urlCount[t.url] > 1) {
-                dups.push(t);
-              } else {
-                nonDups.push(t);
-              }
-            }
-            dups.sort((a, b) => a.url.localeCompare(b.url));
-            tabs.length = 0;
-            tabs.push(...dups, ...nonDups);
-            break;
-          }
-        }
-
-        await browser.tabs.move(tabs.map((t) => t.id), { index: startIndex });
+        await sortCurrentWorkspaceTabs(message.type);
       })();
       break;
     }
@@ -400,11 +406,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "sort-tabs-by-recent": {
       (async () => {
         await browser.zenWorkspaces.hidePalette();
-        const allTabs = await browser.tabs.query({ currentWindow: true });
-        const pinnedCount = allTabs.filter((t) => t.pinned).length;
-        const tabs = allTabs.filter((t) => !t.pinned);
-        tabs.sort((a, b) => b.lastAccessed - a.lastAccessed);
-        await browser.tabs.move(tabs.map((t) => t.id), { index: pinnedCount });
+        await sortCurrentWorkspaceTabs("sort-tabs-recent-desc");
       })();
       break;
     }
@@ -412,14 +414,7 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "sort-tabs-by-domain": {
       (async () => {
         await browser.zenWorkspaces.hidePalette();
-        const allTabs = await browser.tabs.query({ currentWindow: true });
-        const pinnedCount = allTabs.filter((t) => t.pinned).length;
-        const tabs = allTabs.filter((t) => !t.pinned);
-        tabs.sort((a, b) => {
-          try { return new URL(a.url).hostname.localeCompare(new URL(b.url).hostname); }
-          catch (e) { return 0; }
-        });
-        await browser.tabs.move(tabs.map((t) => t.id), { index: pinnedCount });
+        await sortCurrentWorkspaceTabs("sort-tabs-domain-alpha");
       })();
       break;
     }

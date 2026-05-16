@@ -854,6 +854,37 @@ this.zenWorkspaces = class extends ExtensionAPI {
           }
         },
 
+        async reorderTabsByDomIds(domIds) {
+          const w = getWin();
+          if (!w || !w.document || !Array.isArray(domIds) || domIds.length <= 1) return false;
+
+          const tabs = domIds
+            .map((domId) => findTabByDomId(domId))
+            .filter((tab) => tab && !tab.hasAttribute("zen-essential"));
+          if (tabs.length <= 1) return false;
+
+          const parent = tabs[0].parentNode;
+          if (!parent) return false;
+          if (tabs.some((tab) => tab.parentNode !== parent)) return false;
+
+          const children = Array.from(parent.children);
+          const tabSet = new Set(tabs);
+          const firstIndex = children.findIndex((child) => tabSet.has(child));
+          if (firstIndex < 0) return false;
+
+          const marker = w.document.createComment("zen-tabs-panel-reorder");
+          parent.insertBefore(marker, children[firstIndex]);
+
+          const fragment = w.document.createDocumentFragment();
+          for (const tab of tabs) {
+            fragment.appendChild(tab);
+          }
+
+          parent.insertBefore(fragment, marker.nextSibling);
+          marker.remove();
+          return true;
+        },
+
         // Palette management
         async showPalette(view) {
           if (isOverlayOpen()) {

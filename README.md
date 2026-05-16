@@ -1,6 +1,6 @@
 # Zen Tabs Panel
 
-**Version 0.3.1-ui-restore** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
+**Version 0.3.1-ui-restore-reorder-dom-fix** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
 
 A keyboard-driven tab management extension for [Zen Browser](https://zen-browser.app/) with a command palette UI and optional companion Zen Mods.
 
