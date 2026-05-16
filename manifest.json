@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zen Tabs Panel",
-  "version": "0.3.1.1",
-  "version_name": "0.3.1-ui-restore",
+  "version": "0.3.1.4",
+  "version_name": "0.3.1-ui-restore-title-sort",
   "description": "Tab management command palette and utilities for Zen Browser",
   "author": "c13v",
 

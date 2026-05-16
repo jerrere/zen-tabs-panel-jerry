@@ -192,6 +192,19 @@
         ]
       },
       {
+        "name": "reorderTabsByDomIds",
+        "type": "function",
+        "async": true,
+        "description": "Reorder native Zen tab elements to match the supplied DOM ID order",
+        "parameters": [
+          {
+            "name": "domIds",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        ]
+      },
+      {
         "name": "showPalette",
         "type": "function",
         "async": true,

@@ -198,6 +198,140 @@ zen-tabs-panel-0.3.1-ui-restore.xpi
 - `0.3.1-ui-restore` 尚未推送 GitHub。
 - 先試用 XPI，確認 UI/互動符合需求後再 commit / tag / push。
 
+### 2026-05-16 - `0.3.1-ui-restore-reorder-fix` 本機試用版
+
+問題：
+
+- 安裝 `zen-tabs-panel-0.3.1-ui-restore.xpi` 後，`Reorder tabs` 子選單可以打開。
+- 點任一排序項目或用鍵盤按 `1` 到 `9`，palette 會關閉，但 tab 順序不會改變。
+- Browser Toolbox 主控台沒有錯誤訊息。
+- 其他功能如 `Move to start`、`Move to end`、`Scroll to tab`、`Unload` 正常。
+
+判斷：
+
+- `Reorder tabs` 的 message 有送出，因為 palette 會關閉。
+- 原本背景邏輯一次呼叫 `browser.tabs.move(tabs.map((t) => t.id), { index })`。
+- 在 Zen/Firefox 中，批次移動多個 tab 可能保留它們原本的相對順序，因此排序結果看起來沒有套用。
+
+修正：
+
+- 在 `background.js` 新增 `moveTabsInOrder(tabs, startIndex)`。
+- 改成從排序結果尾端開始，一個一個移到目標 index。
+- 這樣最後實際 tab 順序會符合排序後的陣列。
+- 同步修正 legacy `sort-tabs-by-recent` 和 `sort-tabs-by-domain` 路徑。
+
+版本：
+
+```json
+{
+  "version": "0.3.1.2",
+  "version_name": "0.3.1-ui-restore-reorder-fix"
+}
+```
+
+交付：
+
+```text
+zen-tabs-panel-0.3.1-ui-restore-reorder-fix.xpi
+```
+
+狀態：
+
+- 本機試用版。
+- 尚未 commit。
+- 尚未 push。
+
+### 2026-05-16 - `0.3.1-ui-restore-reorder-dom-fix` 本機試用版
+
+問題：
+
+- `0.3.1-ui-restore-reorder-fix` 仍然沒有改變 tab 順序。
+- 這表示問題不只是批次 `browser.tabs.move`，而是 `browser.tabs.move` 這條 WebExtension 路徑對 Zen 的整批 reorder 不可靠。
+
+修正：
+
+- 在 `experiment/api.js` 新增 `reorderTabsByDomIds(domIds)`。
+- 在 `experiment/schema.json` 暴露 `browser.zenWorkspaces.reorderTabsByDomIds()`。
+- `background.js` 的 reorder 流程改成：
+  - 用 `browser.zenWorkspaces.getAllTabs()` 取得含 DOM id 的 Zen tab 清單。
+  - 只篩選目前 active workspace。
+  - 依目前動作排序。
+  - 呼叫 `browser.zenWorkspaces.reorderTabsByDomIds(sortedDomIds)`。
+- `reorderTabsByDomIds()` 在 chrome privileged context 裡直接重排 native tab elements，避免 WebExtension `tabs.move` 被 Zen workspace/sidebar 行為吃掉。
+
+版本：
+
+```json
+{
+  "version": "0.3.1.3",
+  "version_name": "0.3.1-ui-restore-reorder-dom-fix"
+}
+```
+
+交付：
+
+```text
+zen-tabs-panel-0.3.1-ui-restore-reorder-dom-fix.xpi
+```
+
+狀態：
+
+- 本機試用版。
+- 尚未 commit。
+- 尚未 push。
+
+### 2026-05-16 - `0.3.1-ui-restore-title-sort` 本機試用版
+
+需求：
+
+- 在 `Reorder tabs` 子選單加入新的排序功能。
+- 顯示名稱：`Title (A-Z)`。
+- 放在最後。
+- 快捷鍵：`0`。
+- 排序依據：Zen 左側 sidebar 顯示的 tab 名稱。
+- 如果使用者雙擊自定義名稱，使用自定義名稱。
+- 沒有自定義名稱時，用原本 tab 名稱。
+- 第一次執行 A-Z，第二次執行同功能切換 Z-A。
+- 大小寫不敏感。
+- 使用瀏覽器預設 locale。
+- 使用自然排序，例如 `tab 2` 在 `tab 10` 前面。
+- 空名稱或只有空白的 tab 放最後。
+- 只排序目前 workspace。
+- pinned / Essential 規則沿用既有 reorder 行為。
+
+修正：
+
+- `popup/popup.js`
+  - 在 `showReorderTabs()` 最後新增 `Title (A-Z)` 項目。
+  - hotkey 使用 `0`。
+  - action 使用 `sort-tabs-title-toggle`。
+- `background.js`
+  - 新增 `titleSortDescending` 狀態，用來在 A-Z / Z-A 間切換。
+  - 使用 `Intl.Collator(undefined, { numeric: true, sensitivity: "base" })` 做自然排序與大小寫不敏感比較。
+  - 空白 title 永遠排最後。
+  - 仍透過 `browser.zenWorkspaces.reorderTabsByDomIds()` 套用排序。
+
+版本：
+
+```json
+{
+  "version": "0.3.1.4",
+  "version_name": "0.3.1-ui-restore-title-sort"
+}
+```
+
+交付：
+
+```text
+zen-tabs-panel-0.3.1-ui-restore-title-sort.xpi
+```
+
+狀態：
+
+- 本機試用版。
+- 尚未 commit。
+- 尚未 push。
+
 ## 目前工作樹注意事項
 
 截至 2026-05-16 18:21，本地工作樹有尚未 commit 的 `0.3.1-ui-restore` 修改。
