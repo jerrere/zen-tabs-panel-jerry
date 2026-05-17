@@ -16,6 +16,7 @@ A keyboard-driven tab management extension for [Zen Browser](https://zen-browser
 
 - Go to previous tab - jump to the last tab you were on, even across workspaces. Shows workspace indicator when the tab is in a different workspace. Hovering or selecting highlights the tab in the sidebar.
 - Go to parent tab - jump to the tab that opened the current one. Shows workspace indicator and sidebar preview on hover/select.
+- Search tab titles - press Z, then type in the palette search row to find tabs across all workspaces by their displayed title, including custom Zen tab titles
 - Child tabs - list all tabs spawned from the current tab
 - Sibling tabs - list all tabs that share the same parent as the current tab
 - Parent tabs - list all tabs that have spawned children
@@ -47,6 +48,7 @@ This build keeps the original v0.3.0 palette UI and interactions, and restores a
 |---|---|
 | `P` | Previous tab |
 | `T` | Parent tab |
+| `Z` | Focus title search |
 | `C` | Children |
 | `B` | Siblings |
 | `⇧T` | Parent tabs |
@@ -66,7 +68,7 @@ This build keeps the original v0.3.0 palette UI and interactions, and restores a
 | `U` | Unload tab |
 | `,` | Settings |
 
-**Workspace filtering** - In tab list views, a footer bar shows workspace icons. Use the QWERTY row keys (Q=1st workspace, W=2nd, etc.) to filter by workspace, or backtick (`` ` ``) to toggle between all and current workspace. Tab/Shift-Tab moves focus between the list and the footer.
+**Workspace filtering** - In tab list views and title search results, a footer bar shows workspace icons. Use the QWERTY row keys (Q=1st workspace, W=2nd, etc.) to filter by workspace, or backtick (`` ` ``) to toggle between all and current workspace. Tab/Shift-Tab moves focus between the list and the footer.
 
 **Settings** (accessible from the palette or `about:addons` › Extensions › Zen Tabs Panel › Preferences):
 

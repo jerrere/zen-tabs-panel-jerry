@@ -13,7 +13,7 @@ let unvisitedTabCount = 0;
 let parentTabPreview = null;  // { title, favIconUrl }
 let previousTabPreview = null; // { title, favIconUrl }
 let selectedTabCount = 0;
-let workspaceMap = {};     // uuid → { name, svgContent }
+let workspaceMap = {};     // uuid → { name, svgContent, iconText }
 let activeWorkspaceId = null;
 let duplicateGroupCount = 0;
 let siblingTabCount = 0;
@@ -33,6 +33,10 @@ let domainsSortAlpha = false;
 let sectionStarts = [];
 let footerFocused = false;
 let footerSelectedIndex = -1;
+let titleSearchQuery = "";
+let titleSearchAllTabs = [];
+let titleSearchRequestId = 0;
+let titleSearchComposing = false;
 
 const ext = typeof browser !== "undefined" ? browser : chrome;
 
@@ -54,8 +58,9 @@ function activateTab(domId) {
 function getActions() {
   return [
     { id: "go-to-previous-tab", label: "Previous", hotkey: "P", icon: "svg:arrow-left-right", preview: previousTabPreview },
-    { id: "go-to-parent-tab", label: "Parent", hotkey: "T", icon: "svg:move-up", needsParent: true, preview: parentTabPreview },
+    { type: "title-search" },
     { type: "separator" },
+    { id: "go-to-parent-tab", label: "Parent", hotkey: "T", icon: "svg:move-up", needsParent: true, preview: parentTabPreview, compact: true },
     { id: "child-tabs", label: "Children", hotkey: "C", icon: "svg:move-down", isView: true, needsChildren: true, count: childTabCount, compact: true },
     { id: "sibling-tabs", label: "Siblings", hotkey: "B", icon: "svg:git-branch", isView: true, needsSiblings: true, count: siblingTabCount, compact: true },
     { id: "parent-tabs", label: "Parent tabs", hotkey: "⇧T", icon: "svg:parent-node", isView: true, compact: true },
@@ -87,6 +92,7 @@ function getActions() {
 const SVG_ATTRS = 'width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 const SVG_ICONS = {
   "arrow-left-right": `<svg ${SVG_ATTRS}><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>`,
+  "search": `<svg ${SVG_ATTRS}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
   "move-up": `<svg ${SVG_ATTRS}><path d="M8 6l4-4 4 4"/><path d="M12 2v14"/><circle cx="12" cy="20" r="2"/></svg>`,
   "move-down": `<svg ${SVG_ATTRS}><path d="M8 18l4 4 4-4"/><path d="M12 22V8"/><circle cx="12" cy="4" r="2"/></svg>`,
   "parent-node": `<svg ${SVG_ATTRS}><circle cx="12" cy="4" r="3"/><path d="M12 7v5"/><path d="M12 12l-5 5"/><path d="M12 12l5 5"/><circle cx="7" cy="19" r="2"/><circle cx="17" cy="19" r="2"/></svg>`,
@@ -114,6 +120,20 @@ function getIcon(icon) {
   return icon;
 }
 
+function renderWorkspaceIcon(ws, className) {
+  if (!ws) return "";
+  if (ws.svgContent) return `<span class="${className}">${ws.svgContent}</span>`;
+  if (ws.iconText) return `<span class="${className} ws-icon-text">${escapeHtml(ws.iconText)}</span>`;
+  return "";
+}
+
+function renderWorkspaceIconOrInitial(ws, className) {
+  const iconHtml = renderWorkspaceIcon(ws, className);
+  if (iconHtml) return iconHtml;
+  const initial = Array.from(String(ws?.name || "?").trim())[0] || "?";
+  return `<span class="${className} ws-icon-text">${escapeHtml(initial)}</span>`;
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -127,8 +147,47 @@ function isActionDisabled(action) {
   return false;
 }
 
+function focusTitleSearchInput() {
+  const input = document.getElementById("title-search-input");
+  if (!input) return;
+  requestAnimationFrame(() => {
+    input.focus();
+    const len = input.value.length;
+    try { input.setSelectionRange(len, len); } catch (e) {}
+  });
+}
+
+function createTitleSearchRow() {
+  const row = document.createElement("div");
+  row.className = "title-search-row";
+  row.innerHTML = `
+    <span class="item-icon-placeholder">${getIcon("svg:search")}</span>
+    <input id="title-search-input" class="title-search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Search tab titles" value="${escapeAttr(titleSearchQuery)}">
+    <span class="item-right"><span class="item-badge">Z</span></span>
+  `;
+
+  const input = row.querySelector("#title-search-input");
+  row.addEventListener("click", () => focusTitleSearchInput());
+  input.addEventListener("compositionstart", () => {
+    titleSearchComposing = true;
+  });
+  input.addEventListener("compositionend", () => {
+    titleSearchComposing = false;
+    titleSearchQuery = input.value;
+    if (normalizeSearchText(titleSearchQuery)) {
+      showTitleSearch(false);
+    }
+  });
+  input.addEventListener("input", () => {
+    if (titleSearchComposing) return;
+    titleSearchQuery = input.value;
+    showTitleSearch(false);
+  });
+  return row;
+}
+
 function renderActions(actions, title) {
-  items = actions.filter((a) => a.type !== "separator" && a.type !== "workspaces");
+  items = actions.filter((a) => a.type !== "separator" && a.type !== "workspaces" && a.type !== "title-search");
   selectedIndex = -1;
   sectionStarts = [0];
 
@@ -149,6 +208,12 @@ function renderActions(actions, title) {
     if (action.type === "workspaces") {
       gridContainer = null;
       renderWorkspaceSwitcher(listEl);
+      continue;
+    }
+
+    if (action.type === "title-search") {
+      gridContainer = null;
+      listEl.appendChild(createTitleSearchRow());
       continue;
     }
 
@@ -174,7 +239,7 @@ function renderActions(actions, title) {
       if (action.preview.workspaceId && action.preview.workspaceId !== activeWorkspaceId) {
         const ws = workspaceMap[action.preview.workspaceId];
         if (ws) {
-          const wsIcon = ws.svgContent ? `<span class="preview-ws-icon">${ws.svgContent}</span>` : "";
+          const wsIcon = renderWorkspaceIcon(ws, "preview-ws-icon");
           wsLabel = `<span class="preview-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
         }
       }
@@ -316,6 +381,30 @@ function renderTabList(tabs, title, hint) {
   updateHeader(title, hint);
 }
 
+function renderTitleSearchResults(tabs) {
+  sectionStarts = [0];
+  selectedIndex = tabs.length > 0 ? 0 : -1;
+  items = tabs;
+  listEl.innerHTML = "";
+  listEl.appendChild(createTitleSearchRow());
+
+  if (tabs.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = normalizeSearchText(titleSearchQuery) ? "No matching tabs" : "Type a tab title";
+    listEl.appendChild(empty);
+  } else {
+    for (let i = 0; i < tabs.length; i++) {
+      const badge = (i + 1) <= 9 ? String(i + 1) : null;
+      listEl.appendChild(createTabElement(tabs[i], badge));
+    }
+  }
+
+  updateSelection();
+  updateHeader("Search tabs");
+  focusTitleSearchInput();
+}
+
 function createTabElement(tab, badge) {
   const el = document.createElement("div");
   el.className = "list-item";
@@ -337,9 +426,7 @@ function createTabElement(tab, badge) {
   if (tab.workspaceId && tab.workspaceId !== activeWorkspaceId) {
     const ws = workspaceMap[tab.workspaceId];
     if (ws) {
-      const wsIcon = ws.svgContent
-        ? `<span class="subtitle-ws-icon">${ws.svgContent}</span>`
-        : "";
+      const wsIcon = renderWorkspaceIcon(ws, "subtitle-ws-icon");
       wsHtml = `<span class="subtitle-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
     }
   }
@@ -394,9 +481,7 @@ function createDuplicateTabElement(tab) {
   if (tab.workspaceId && tab.workspaceId !== activeWorkspaceId) {
     const ws = workspaceMap[tab.workspaceId];
     if (ws) {
-      const wsIcon = ws.svgContent
-        ? `<span class="subtitle-ws-icon">${ws.svgContent}</span>`
-        : "";
+      const wsIcon = renderWorkspaceIcon(ws, "subtitle-ws-icon");
       wsHtml = `<span class="subtitle-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
     }
   }
@@ -546,9 +631,7 @@ function renderFooter(sortOptions) {
     const el = document.createElement("span");
     el.className = "footer-item" + (isActive ? " active" : "");
 
-    const iconHtml = ws.svgContent
-      ? `<span class="footer-ws-icon">${ws.svgContent}</span>`
-      : "";
+    const iconHtml = renderWorkspaceIcon(ws, "footer-ws-icon");
     el.innerHTML = `${iconHtml}${badge !== null ? `<span class="footer-badge">${badge}</span>` : ""}`;
     el.title = ws.name;
 
@@ -583,6 +666,7 @@ function refreshCurrentView() {
     case "domain-tabs": showDomainTabs(currentDomain, false); break;
     case "tabs-by-age": showTabsByAge(false); break;
     case "most-visited": showMostVisited(false); break;
+    case "title-search": showTitleSearch(false); break;
   }
 }
 
@@ -809,7 +893,7 @@ async function fetchWorkspaceMap() {
     workspaceMap = {};
     activeWorkspaceId = null;
     for (const ws of workspaces) {
-      workspaceMap[ws.uuid] = { name: ws.name, svgContent: ws.svgContent };
+      workspaceMap[ws.uuid] = { name: ws.name, svgContent: ws.svgContent, iconText: ws.iconText };
       if (ws.isActive) activeWorkspaceId = ws.uuid;
     }
   } catch (e) {
@@ -818,12 +902,35 @@ async function fetchWorkspaceMap() {
   }
 }
 
+async function showTitleSearch(animate) {
+  currentView = "title-search";
+
+  const requestId = ++titleSearchRequestId;
+  let allTabs = titleSearchAllTabs;
+  if (!allTabs || allTabs.length === 0) {
+    try {
+      allTabs = await ext.runtime.sendMessage({ type: "get-all-tabs" });
+      titleSearchAllTabs = allTabs;
+    } catch (e) {
+      allTabs = [];
+    }
+  }
+  if (requestId !== titleSearchRequestId) return;
+
+  const results = searchTabsByTitle(allTabs, titleSearchQuery, workspaceFilter);
+  renderTitleSearchResults(results);
+  if (normalizeSearchText(titleSearchQuery)) renderFooter();
+  else hideFooter();
+  if (animate !== false) animateList("forward");
+}
+
 async function showActionsMenu() {
   currentView = "actions";
 
   // Fetch tab info for disabling unavailable actions and previews
   try {
     const allTabs = await ext.runtime.sendMessage({ type: "get-all-tabs" });
+    titleSearchAllTabs = allTabs;
     const activeTab = allTabs.find((t) => t.active);
     currentTabHasParent = !!(activeTab && activeTab.openerTabDomId);
     childTabCount = activeTab ? allTabs.filter((t) => t.openerTabDomId === activeTab.domId).length : 0;
@@ -879,6 +986,7 @@ async function showActionsMenu() {
       selectedTabCount = 0;
     }
   } catch (e) {
+    titleSearchAllTabs = [];
     currentTabHasParent = false;
     childTabCount = 0;
     siblingTabCount = 0;
@@ -1108,10 +1216,10 @@ function renderWorkspaceList(workspaces, title) {
     el.className = "list-item";
     el.dataset.workspaceId = ws.uuid;
 
-    const iconHtml = ws.svgContent
-      ? `<span class="workspace-icon">${ws.svgContent}</span>`
+    const iconHtml = renderWorkspaceIconOrInitial(ws, "workspace-icon"); /*
       : `<span class="item-icon-placeholder">○</span>`;
 
+    */
     el.innerHTML = `
       ${iconHtml}
       <span class="item-text">
@@ -1374,7 +1482,7 @@ function renderTabInfo(info, visits, duplicates) {
       const isSelf = dup.domId === info.domId;
       const dupAge = formatDuration(now - parseInt(dup.domId.split("-")[0]));
       const ws = dup.workspaceId ? workspaceMap[dup.workspaceId] : null;
-      const wsIcon = ws?.svgContent ? `<span class="dup-ws-icon">${ws.svgContent}</span>` : "";
+      const wsIcon = renderWorkspaceIcon(ws, "dup-ws-icon");
       const wsName = ws ? escapeHtml(ws.name) : "";
       const wsNote = isSelf ? `<span class="dup-ws-note">(this tab)</span>`
         : (dup.workspaceId === activeWorkspaceId) ? `<span class="dup-ws-note">(this workspace)</span>` : "";
@@ -1528,7 +1636,7 @@ function renderDuplicateGroups(groups) {
       const tab = group[i];
       const age = formatDuration(now - parseInt(tab.domId.split("-")[0]));
       const ws = tab.workspaceId ? workspaceMap[tab.workspaceId] : null;
-      const wsIcon = ws?.svgContent ? `<span class="dup-ws-icon">${ws.svgContent}</span>` : "";
+      const wsIcon = renderWorkspaceIcon(ws, "dup-ws-icon");
       const wsName = ws ? escapeHtml(ws.name) : "";
       const isActive = tab.active;
       const wsNote = isActive ? `<span class="dup-ws-note">(this tab)</span>`
@@ -1812,7 +1920,7 @@ function renderTabsByAge(groups) {
       if (tab.workspaceId && tab.workspaceId !== activeWorkspaceId) {
         const ws = workspaceMap[tab.workspaceId];
         if (ws) {
-          const wsIcon = ws.svgContent ? `<span class="subtitle-ws-icon">${ws.svgContent}</span>` : "";
+          const wsIcon = renderWorkspaceIcon(ws, "subtitle-ws-icon");
           wsHtml = `<span class="subtitle-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
         }
       }
@@ -1999,7 +2107,7 @@ async function showMostVisited(animate) {
     if (tab.workspaceId && tab.workspaceId !== activeWorkspaceId) {
       const ws = workspaceMap[tab.workspaceId];
       if (ws) {
-        const wsIcon = ws.svgContent ? `<span class="subtitle-ws-icon">${ws.svgContent}</span>` : "";
+        const wsIcon = renderWorkspaceIcon(ws, "subtitle-ws-icon");
         wsHtml = `<span class="subtitle-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
       }
     }
@@ -2057,10 +2165,11 @@ function renderWorkspaceSwitcher(container) {
     el.className = "list-item compact-item" + (isActive ? " ws-active" : "");
     el.dataset.workspaceSwitchId = uuid;
 
-    const iconHtml = ws.svgContent
+    const iconHtml = `<span class="item-icon-placeholder">${renderWorkspaceIconOrInitial(ws, "workspace-icon")}</span>`; /*
       ? `<span class="item-icon-placeholder"><span class="workspace-icon">${ws.svgContent}</span></span>`
       : `<span class="item-icon-placeholder">○</span>`;
 
+    */
     const tabCount = workspaceTabCounts[uuid] || 0;
 
     el.innerHTML = `
@@ -2091,6 +2200,21 @@ function moveToWorkspace(workspaceId) {
 }
 
 function goBack() {
+  if (currentView === "title-search") {
+    ext.runtime.sendMessage({ type: "clear-preview" }).catch(() => {});
+    titleSearchRequestId++;
+    titleSearchQuery = "";
+    workspaceFilter = "all";
+    hideFooter();
+    if (initialView) {
+      closePalette();
+    } else {
+      showActionsMenu();
+      animateList("back");
+    }
+    return;
+  }
+
   if (currentView === "domain-tabs") {
     ext.runtime.sendMessage({ type: "clear-preview" }).catch(() => {});
     showDomains(false);
@@ -2103,6 +2227,7 @@ function goBack() {
     domainsSortAlpha = false;
     tabsByAgeNewestFirst = false;
     currentDomain = null;
+    titleSearchQuery = "";
     hideFooter();
     if (initialView) {
       closePalette();
@@ -2117,7 +2242,70 @@ function goBack() {
 // Keyboard handling
 // ---------------------------------------------------------------------------
 
+function isTitleSearchInput(target) {
+  return target && target.id === "title-search-input";
+}
+
+function clearTitleSearchToActions() {
+  titleSearchRequestId++;
+  titleSearchQuery = "";
+  workspaceFilter = "all";
+  hideFooter();
+  showActionsMenu();
+}
+
+function handleTitleSearchInputKeydown(e) {
+  if (titleSearchComposing || e.isComposing || e.key === "Process" || e.keyCode === 229) {
+    return true;
+  }
+
+  switch (e.key) {
+    case "ArrowDown":
+      e.preventDefault();
+      footerFocused = false;
+      footerSelectedIndex = -1;
+      moveSelection(1);
+      return true;
+
+    case "ArrowUp":
+      e.preventDefault();
+      footerFocused = false;
+      footerSelectedIndex = -1;
+      moveSelection(-1);
+      return true;
+
+    case "Tab":
+      e.preventDefault();
+      e.target.blur();
+      jumpToSection(e.shiftKey ? -1 : 1);
+      return true;
+
+    case "Enter":
+      e.preventDefault();
+      if (footerFocused) activateFooterSelected();
+      else activateSelected();
+      return true;
+
+    case "Escape":
+      e.preventDefault();
+      if (currentView === "title-search") clearTitleSearchToActions();
+      else closePalette();
+      return true;
+
+    default:
+      return true;
+  }
+}
+
+function shouldFocusTitleSearch(e) {
+  return !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toUpperCase() === "Z";
+}
+
 document.addEventListener("keydown", (e) => {
+  if (isTitleSearchInput(e.target) && handleTitleSearchInputKeydown(e)) {
+    return;
+  }
+
   switch (e.key) {
     case "ArrowDown":
       e.preventDefault();
@@ -2162,7 +2350,11 @@ document.addEventListener("keydown", (e) => {
       break;
 
     case "Escape":
-      closePalette();
+      if (currentView === "title-search" && normalizeSearchText(titleSearchQuery)) {
+        clearTitleSearchToActions();
+      } else {
+        closePalette();
+      }
       break;
 
     case "Backspace":
@@ -2174,6 +2366,14 @@ document.addEventListener("keydown", (e) => {
 
     default:
       if (currentView === "actions" || currentView === "reorder-tabs") {
+        if (currentView === "actions" && shouldFocusTitleSearch(e)) {
+          e.preventDefault();
+          selectedIndex = -1;
+          updateSelection();
+          focusTitleSearchInput();
+          break;
+        }
+
         // Number keys 1-9 for workspace switching in actions view
         const num = parseInt(e.key, 10);
         if (!isNaN(num) && num >= 1 && num <= 9) {

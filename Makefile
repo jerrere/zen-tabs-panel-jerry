@@ -2,6 +2,7 @@ XPI = zen-tabs-panel.xpi
 
 SRC = manifest.json \
       background.js \
+      lib/title-search.js \
       experiment/api.js \
       experiment/schema.json \
       popup/popup.html \
