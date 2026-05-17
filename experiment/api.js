@@ -83,6 +83,10 @@ this.zenWorkspaces = class extends ExtensionAPI {
       close() {
         const w = Services.wm.getMostRecentWindow("navigator:browser");
         if (!w) return;
+        if (essentialCtrlTabGuard) {
+          w.removeEventListener("keydown", essentialCtrlTabGuard, true);
+          essentialCtrlTabGuard = null;
+        }
         const overlay = w.document.getElementById("zen-tabs-panel-overlay");
         if (overlay) overlay.remove();
       },
@@ -119,6 +123,96 @@ this.zenWorkspaces = class extends ExtensionAPI {
         } catch (e) {}
       }
       return url;
+    }
+
+    function cleanTitleText(value) {
+      return String(value || "").replace(/\s+/g, " ").trim();
+    }
+
+    function getDisplayedTabTitle(tab) {
+      const selectors = [".tab-label", ".tab-label-container"];
+      for (const selector of selectors) {
+        const el = tab.querySelector?.(selector);
+        const text = cleanTitleText(el?.textContent || el?.getAttribute?.("value"));
+        if (text) return text;
+      }
+      return cleanTitleText(tab.label || tab.getAttribute?.("label"));
+    }
+
+    let essentialCtrlTabGuard = null;
+
+    function installEssentialCtrlTabGuard() {
+      const w = getWin();
+      if (!w || essentialCtrlTabGuard) return;
+
+      essentialCtrlTabGuard = (event) => {
+        if (
+          event.defaultPrevented ||
+          !event.ctrlKey ||
+          event.altKey ||
+          event.metaKey ||
+          event.key !== "Tab"
+        ) {
+          return;
+        }
+
+        const current = w.gBrowser?.selectedTab;
+        if (!current || !current.hasAttribute("zen-essential")) return;
+
+        const visibleTabs = Array.from(w.gBrowser.visibleTabs || []);
+        const essentials = visibleTabs
+          .filter((tab) => tab.hasAttribute("zen-essential") && !tab.closing)
+          .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+
+        if (essentials.length <= 1) return;
+
+        const currentIndex = essentials.indexOf(current);
+        const target = event.shiftKey
+          ? essentials[(currentIndex + essentials.length - 1) % essentials.length]
+          : essentials.find((tab) => tab !== current);
+
+        if (!target || target === current) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        w.gBrowser.selectedTab = target;
+      };
+
+      w.addEventListener("keydown", essentialCtrlTabGuard, true);
+    }
+
+    function firstGrapheme(value) {
+      return Array.from(cleanTitleText(value))[0] || "";
+    }
+
+    function isFetchableWorkspaceIcon(icon) {
+      return /^(chrome|resource|moz-extension|data):/i.test(icon) || /\.svg(?:[?#]|$)/i.test(icon);
+    }
+
+    async function getWorkspaceIconData(workspace) {
+      const icon = cleanTitleText(workspace?.icon);
+      let svgContent = "";
+      let iconText = "";
+
+      if (icon) {
+        if (isFetchableWorkspaceIcon(icon)) {
+          try {
+            const resp = await getWin().fetch(icon);
+            const text = await resp.text();
+            if (/<svg[\s>]/i.test(text)) {
+              svgContent = text;
+            }
+          } catch (e) {}
+        } else {
+          iconText = icon;
+        }
+      }
+
+      if (!svgContent && !iconText) {
+        iconText = firstGrapheme(workspace?.name);
+      }
+
+      return { svgContent, iconText };
     }
 
     // Get all tab elements across all workspaces from the DOM
@@ -417,6 +511,8 @@ this.zenWorkspaces = class extends ExtensionAPI {
       return overlay && !overlay.dataset.closing;
     }
 
+    installEssentialCtrlTabGuard();
+
     return {
       zenWorkspaces: {
         async getAll() {
@@ -538,7 +634,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
             results.push({
               id: extId,
               domId: tab.id,
-              title: tab.label || "",
+              title: getDisplayedTabTitle(tab),
               url: tab.linkedBrowser?.currentURI?.spec || "",
               workspaceId: tab.getAttribute("zen-workspace-id") || null,
               pinned: tab.pinned || false,
@@ -700,7 +796,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
 
           return {
             domId,
-            title: tab.label || "",
+            title: getDisplayedTabTitle(tab),
             url,
             favIconUrl: unwrapFavicon(tab.image),
             pinned: tab.pinned || false,
@@ -780,14 +876,8 @@ this.zenWorkspaces = class extends ExtensionAPI {
           const activeId = w.gZenWorkspaces.activeWorkspace;
           const results = [];
           for (const ws of workspaces) {
-            let svgContent = "";
-            if (ws.icon) {
-              try {
-                const resp = await w.fetch(ws.icon);
-                svgContent = await resp.text();
-              } catch (e) {}
-            }
-            results.push({ uuid: ws.uuid, name: ws.name, svgContent, isActive: ws.uuid === activeId });
+            const { svgContent, iconText } = await getWorkspaceIconData(ws);
+            results.push({ uuid: ws.uuid, name: ws.name, svgContent, iconText, isActive: ws.uuid === activeId });
           }
           return results;
         },

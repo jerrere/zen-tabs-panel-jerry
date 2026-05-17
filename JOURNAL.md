@@ -332,6 +332,78 @@ zen-tabs-panel-0.3.1-ui-restore-title-sort.xpi
 - 尚未 commit。
 - 尚未 push。
 
+### 2026-05-17 - `title-search-workspace-polish` 本機工作版
+
+概要：
+
+- 新增跨 workspace 的 tab title 搜尋。
+- 搜尋會使用 Zen sidebar 實際顯示的 title，包含使用者自定義後的 tab title。
+- 主 palette 保留 `Previous` 第一列，原本 `Parent` 的位置改成搜尋列；`Parent` 移到下方與 `Children` / `Siblings` / `Parent tabs` 同區。
+- 搜尋列快捷鍵改為 `Z`，開啟 palette 時不自動聚焦搜尋欄，避免吞掉原本的 palette 快捷鍵。
+- 搜尋時刪到空字串後仍留在搜尋輸入框，顯示 `Type a tab title`；按 `Esc` 才回主 palette。
+- 修正中文輸入法 / IME composition：組字期間不攔截 `Enter`、方向鍵、`Esc`、`Process` / `keyCode 229` 等事件，並把搜尋欄改成 `type="text"`。
+- 搜尋結果支援現有 workspace footer filtering：backtick 切 all/current workspace，QWERTY row 切指定 workspace。
+- Workspace footer / workspace switcher 的 icon 改成支援 Zen workspace 的 SVG URL 與 emoji/文字 icon，避免 fallback 成空心圓。
+- Active workspace 不再用半透明灰階，改成低調 selected state：淡背景 + 左側 2px accent indicator。
+- 新增 Essential tabs 的 narrow `Ctrl+Tab` guard：只有目前 tab 是 `zen-essential` 時介入，限定在目前可見 workspace 的 Essential tabs 之間切換，避免 Ctrl+Tab 跳到其他 workspace。
+
+主要檔案：
+
+- `popup/popup.js`
+  - 新增 title search row、`title-search` view、Z 聚焦搜尋、IME composition handling、空搜尋狀態。
+  - Workspace icon render 統一成 `renderWorkspaceIcon()` / `renderWorkspaceIconOrInitial()`。
+  - Active workspace row 使用 `.ws-active` 樣式，不再顯示成 disabled 感。
+- `popup/popup.css`
+  - 新增搜尋列樣式。
+  - 新增 workspace emoji/文字 icon 尺寸樣式。
+  - 調整 `.ws-active` 為低調選取狀態。
+- `popup/popup.html`
+  - 載入 `../lib/title-search.js`。
+- `lib/title-search.js`
+  - 新增 `normalizeSearchText()` / `searchTabsByTitle()`，只匹配 title、空字串回空結果、依 `lastAccessed` 新到舊排序、支援 workspace filter。
+- `tests/title-search.test.js`
+  - 覆蓋大小寫不敏感、空查詢、只搜 title、不搜 URL/domain、lastAccessed 排序、workspace filter。
+- `experiment/api.js`
+  - 新增 `getDisplayedTabTitle()`，優先讀 `.tab-label` / `.tab-label-container`，fallback 到 `tab.label`。
+  - `getAllTabs()` / `getTabInfo()` 改用同一個 displayed title helper。
+  - `getWorkspacesWithIcons()` 改成回傳 `svgContent` 或 `iconText`。
+  - 新增 Essential-only `Ctrl+Tab` guard，extension unload 時會移除 listener。
+- `Makefile`
+  - 把 `lib/title-search.js` 加入 XPI 打包清單。
+- `README.md`
+  - 更新 title search、Z 快捷鍵、workspace footer filtering 描述。
+
+驗證：
+
+- `node --check lib/title-search.js`
+- `node --check popup/popup.js`
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`
+  - 目前 23 tests passed。
+- `git diff --check`
+  - 通過，僅有 Windows checkout 的 LF/CRLF warning。
+- 多次重新產生 `zen-tabs-panel.xpi`，最新一次在此工作艙中為 `2026-05-17 22:04:31 +08:00`，大小 `43,942 bytes`。
+
+注意：
+
+- 目前仍在 `jerry-previous-tab-shortcut` branch。
+- 這些變更目前是本機未 commit 狀態，尚未 push。
+- 修改到 `experiment/api.js` 的內容，安裝 XPI 後通常需要完整重啟 Zen Browser 才會載入新的 experiment API。
+
+### 2026-05-17 - `0.4.0` release
+
+概要：
+
+- 將 `title-search-workspace-polish` 工作版整理為 `0.4.0`。
+- `manifest.json` / `package.json` 版本更新為 `0.4.0`。
+- `README.md` 版本標示更新為 `0.4.0`。
+- 預計以 `v0.4.0` tag 觸發 GitHub Actions release workflow，產生並上傳 `zen-tabs-panel.xpi`。
+
+驗證：
+
+- 發布前重新跑 `node --test tests/*.test.js`。
+- 發布前重新打包 `zen-tabs-panel.xpi` 並確認內容包含 `lib/title-search.js`。
+
 ## 目前工作樹注意事項
 
 截至 2026-05-16 18:21，本地工作樹有尚未 commit 的 `0.3.1-ui-restore` 修改。
