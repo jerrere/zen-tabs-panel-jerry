@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zen Tabs Panel",
-  "version": "0.4.0",
-  "version_name": "0.4.0",
+  "version": "0.4.2",
+  "version_name": "0.4.2",
   "description": "Tab management command palette and utilities for Zen Browser",
   "author": "c13v",
 
