@@ -404,6 +404,38 @@ zen-tabs-panel-0.3.1-ui-restore-title-sort.xpi
 - 發布前重新跑 `node --test tests/*.test.js`。
 - 發布前重新打包 `zen-tabs-panel.xpi` 並確認內容包含 `lib/title-search.js`。
 
+### 2026-05-18 - `0.4.1` IME numpad local fix
+
+概要：
+
+- 修正微軟注音在 title search 輸入框使用數字鍵盤時，事件被 palette 當作結果快捷鍵或方向鍵處理，造成選取項目跳動的問題。
+- Title search 組字期間的 `input` / `keydown` 不再觸發列表重繪或全域快捷鍵。
+- 在 `title-search` view 中，從 IME 候選窗落到 document 的 numpad 文字鍵會重新聚焦搜尋框並略過 palette 快捷鍵。
+- 本機版本更新為 `0.4.1`，方便覆蓋安裝測試。
+
+驗證：
+
+- `node --check popup/popup.js`
+- `node --test tests/*.test.js`
+  - 目前 23 tests passed。
+
+### 2026-05-18 - `0.4.2` workspace-local Ctrl+Tab fix
+
+概要：
+
+- 將 `Ctrl+Tab` guard 從 essential-only 擴大成 workspace-local guard。
+- 從一般 tab 按 `Ctrl+Tab` 時，候選清單只包含目前 workspace 的非 essential tabs，避免原生 Ctrl+Tab 撞到 essential 後切到 essential 固定綁定的 workspace。
+- 目前 tab 已是 essential 時，才允許 essential 參與候選，並同時保留目前 workspace 的一般 tabs，讓 essential 狀態下仍可回到同 workspace 的上一個一般 tab。
+- 選到 essential 後會用 microtask + 0ms timer 檢查並還原原本的 active workspace，降低 Zen 內部 essential tab selection 將 workspace 帶走的機率。
+- 本機版本更新為 `0.4.2`，方便覆蓋安裝測試。
+
+驗證：
+
+- `node --check experiment/api.js`
+- `node --check popup/popup.js`
+- `node --test tests/*.test.js`
+  - 目前 23 tests passed。
+
 ## 目前工作樹注意事項
 
 截至 2026-05-16 18:21，本地工作樹有尚未 commit 的 `0.3.1-ui-restore` 修改。

@@ -145,37 +145,77 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const w = getWin();
       if (!w || essentialCtrlTabGuard) return;
 
-      essentialCtrlTabGuard = (event) => {
-        if (
-          event.defaultPrevented ||
-          !event.ctrlKey ||
-          event.altKey ||
-          event.metaKey ||
-          event.key !== "Tab"
-        ) {
-          return;
-        }
-
-        const current = w.gBrowser?.selectedTab;
-        if (!current || !current.hasAttribute("zen-essential")) return;
-
-        const visibleTabs = Array.from(w.gBrowser.visibleTabs || []);
-        const essentials = visibleTabs
-          .filter((tab) => tab.hasAttribute("zen-essential") && !tab.closing)
-          .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-
-        if (essentials.length <= 1) return;
-
-        const currentIndex = essentials.indexOf(current);
-        const target = event.shiftKey
-          ? essentials[(currentIndex + essentials.length - 1) % essentials.length]
-          : essentials.find((tab) => tab !== current);
-
-        if (!target || target === current) return;
-
+      function stopCtrlTabEvent(event) {
         event.preventDefault();
         event.stopPropagation();
+        if (typeof event.stopImmediatePropagation === "function") {
+          event.stopImmediatePropagation();
+        }
+      }
+
+      function isCtrlTabEvent(event) {
+        return (
+          !event.defaultPrevented &&
+          event.ctrlKey &&
+          !event.altKey &&
+          !event.metaKey &&
+          event.key === "Tab"
+        );
+      }
+
+      function isUsableCtrlTabCandidate(tab) {
+        return tab && !tab.closing && !tab.hidden;
+      }
+
+      function tabBelongsToWorkspace(tab, workspaceId) {
+        const tabWorkspace = tab.getAttribute("zen-workspace-id") || null;
+        return !workspaceId || !tabWorkspace || tabWorkspace === workspaceId;
+      }
+
+      function getCtrlTabCandidates(current, workspaceId) {
+        const currentIsEssential = current?.hasAttribute("zen-essential");
+        return getAllTabElements()
+          .filter(isUsableCtrlTabCandidate)
+          .filter((tab) => {
+            if (tab.hasAttribute("zen-essential")) return currentIsEssential;
+            return tabBelongsToWorkspace(tab, workspaceId);
+          })
+          .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+      }
+
+      function getCtrlTabTarget(candidates, current, reverse) {
+        if (candidates.length <= 1) return null;
+        const currentIndex = candidates.indexOf(current);
+        if (currentIndex < 0) return candidates[0] || null;
+        if (reverse) return candidates[(currentIndex + candidates.length - 1) % candidates.length];
+        return candidates.find((tab) => tab !== current) || null;
+      }
+
+      function restoreWorkspaceIfNeeded(workspaceId) {
+        if (!workspaceId || !w.gZenWorkspaces || w.gZenWorkspaces.activeWorkspace === workspaceId) return;
+        w.gZenWorkspaces.changeWorkspaceWithID(workspaceId).catch(() => {});
+      }
+
+      function selectCtrlTabTarget(target, workspaceId) {
         w.gBrowser.selectedTab = target;
+        if (!target.hasAttribute("zen-essential")) return;
+        Promise.resolve().then(() => restoreWorkspaceIfNeeded(workspaceId));
+        w.setTimeout(() => restoreWorkspaceIfNeeded(workspaceId), 0);
+      }
+
+      essentialCtrlTabGuard = (event) => {
+        if (!isCtrlTabEvent(event)) return;
+
+        const current = w.gBrowser?.selectedTab;
+        const workspaceId = w.gZenWorkspaces?.activeWorkspace || null;
+        if (!current || !workspaceId) return;
+
+        const candidates = getCtrlTabCandidates(current, workspaceId);
+        const target = getCtrlTabTarget(candidates, current, event.shiftKey);
+
+        stopCtrlTabEvent(event);
+        if (!target || target === current) return;
+        selectCtrlTabTarget(target, workspaceId);
       };
 
       w.addEventListener("keydown", essentialCtrlTabGuard, true);

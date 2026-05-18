@@ -173,13 +173,14 @@ function createTitleSearchRow() {
   });
   input.addEventListener("compositionend", () => {
     titleSearchComposing = false;
-    titleSearchQuery = input.value;
-    if (normalizeSearchText(titleSearchQuery)) {
+    setTimeout(() => {
+      const liveInput = document.getElementById("title-search-input") || input;
+      titleSearchQuery = liveInput.value;
       showTitleSearch(false);
-    }
+    }, 0);
   });
-  input.addEventListener("input", () => {
-    if (titleSearchComposing) return;
+  input.addEventListener("input", (event) => {
+    if (titleSearchComposing || event.isComposing || isCompositionInputEvent(event)) return;
     titleSearchQuery = input.value;
     showTitleSearch(false);
   });
@@ -2246,6 +2247,19 @@ function isTitleSearchInput(target) {
   return target && target.id === "title-search-input";
 }
 
+function isImeCompositionEvent(e) {
+  return titleSearchComposing || e.isComposing || e.key === "Process" || e.keyCode === 229;
+}
+
+function isCompositionInputEvent(e) {
+  return typeof e.inputType === "string" && e.inputType.toLowerCase().includes("composition");
+}
+
+function isNumpadTextKey(e) {
+  const code = typeof e.code === "string" ? e.code : "";
+  return /^Numpad(?:[0-9]|Decimal)$/.test(code) || (e.location === 3 && e.key !== "Enter");
+}
+
 function clearTitleSearchToActions() {
   titleSearchRequestId++;
   titleSearchQuery = "";
@@ -2255,7 +2269,7 @@ function clearTitleSearchToActions() {
 }
 
 function handleTitleSearchInputKeydown(e) {
-  if (titleSearchComposing || e.isComposing || e.key === "Process" || e.keyCode === 229) {
+  if (isImeCompositionEvent(e)) {
     return true;
   }
 
@@ -2303,6 +2317,13 @@ function shouldFocusTitleSearch(e) {
 
 document.addEventListener("keydown", (e) => {
   if (isTitleSearchInput(e.target) && handleTitleSearchInputKeydown(e)) {
+    return;
+  }
+  if (isImeCompositionEvent(e)) {
+    return;
+  }
+  if (currentView === "title-search" && isNumpadTextKey(e)) {
+    focusTitleSearchInput();
     return;
   }
 
