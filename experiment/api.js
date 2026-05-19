@@ -1018,6 +1018,18 @@ this.zenWorkspaces = class extends ExtensionAPI {
         // Palette management
         async showPalette(view) {
           if (isOverlayOpen()) {
+            if (view) {
+              const w = getWin();
+              const browserEl = w?.document.getElementById("zen-tabs-panel-browser");
+              if (browserEl) {
+                clearPreviewState();
+                pendingView = view;
+                browserEl.setAttribute("src", getPaletteURL());
+                pendingView = null;
+                w.setTimeout(() => browserEl.focus(), 50);
+                return true;
+              }
+            }
             destroyOverlay();
             return false;
           }

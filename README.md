@@ -1,6 +1,6 @@
 # Zen Tabs Panel
 
-**Version 0.4.2** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
+**Version 0.4.3** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
 
 A keyboard-driven tab management extension for [Zen Browser](https://zen-browser.app/) with a command palette UI and optional companion Zen Mods.
 
@@ -22,7 +22,7 @@ A keyboard-driven tab management extension for [Zen Browser](https://zen-browser
 - Parent tabs - list all tabs that have spawned children
 - Navigation - back/forward history of the current tab with B/F shortcuts for immediate back/forward
 - Unvisited tabs - list tabs opened in the background you haven't looked at
-- Tabs by last visited - all tabs sorted by recency. Hovering or arrow-keying through any tab list highlights and scrolls to the tab in the sidebar.
+- Tabs by last visited - all tabs sorted by recency. Can be opened directly with its own configurable shortcut. Hovering or arrow-keying through any tab list highlights and scrolls to the tab in the sidebar.
 - Tab info - detailed view of the current tab: age, memory/CPU usage, visit history (grouped by date, collapsible), and duplicate tab detection with close buttons
 - Duplicates - view all duplicate tabs across all workspaces, grouped by URL, with workspace indicators, tab age, hover preview, and close buttons. Duplicate tabs are marked with an amber diamond indicator in the sidebar (aligned with the unread dot indicator).
 - Domains - browse tabs grouped by domain with drill-down
@@ -42,7 +42,13 @@ A keyboard-driven tab management extension for [Zen Browser](https://zen-browser
 
 Press `Ctrl+Alt+.` on Windows/Linux or `Ctrl+Cmd+.` on macOS to open the palette (configurable via `about:addons` > Manage Extension Shortcuts). From the palette, use single-key shortcuts to navigate:
 
-This build keeps the original v0.3.0 palette UI and interactions, and restores an independent `Go to previous tab` shortcut in `about:addons` > Manage Extension Shortcuts. It defaults to `Ctrl+Alt+P` on Windows/Linux and `Ctrl+Cmd+P` on macOS.
+This build keeps the original v0.3.0 palette UI and interactions, and restores independent shortcuts in `about:addons` > Manage Extension Shortcuts:
+
+| Command | Windows/Linux | macOS |
+|---|---|---|
+| Open palette | `Ctrl+Alt+.` | `Ctrl+Cmd+.` |
+| Go to previous tab | `Ctrl+Alt+P` | `Ctrl+Cmd+P` |
+| Open recent tabs | `Ctrl+Alt+R` | `Ctrl+Cmd+R` |
 
 | Panel key | Action |
 |---|---|

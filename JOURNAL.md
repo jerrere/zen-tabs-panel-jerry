@@ -436,6 +436,43 @@ zen-tabs-panel-0.3.1-ui-restore-title-sort.xpi
 - `node --test tests/*.test.js`
   - 目前 23 tests passed。
 
+### 2026-05-19 - `0.4.3` independent Recent shortcut
+
+需求：
+
+- 把 palette 內的 `Recent` 功能獨立成 `about:addons > Manage Extension Shortcuts` 可設定的快捷鍵，像 `Previous tab` 一樣不用先開 palette 再按 `R`。
+
+修改：
+
+- `manifest.json`
+  - 版本更新為 `0.4.3`。
+  - 新增 command：`open-recent-tabs`。
+  - Windows/Linux 預設：`Ctrl+Alt+R`。
+  - macOS 預設：`MacCtrl+Command+R`。
+- `background.js`
+  - `browser.commands.onCommand` 收到 `open-recent-tabs` 時呼叫 `browser.zenWorkspaces.showPalette("last-visited")`。
+- `experiment/api.js`
+  - `showPalette(view)` 在 overlay 已開啟且有指定 view 時，改為重新載入 popup 到該 view，而不是直接關閉 palette。
+  - 一般 `open-palette` 沒帶 view 時仍保留 toggle 行為。
+- `README.md`
+  - 補上獨立快捷鍵表格與 Recent 直接開啟說明。
+- `package.json`
+  - 版本同步更新為 `0.4.3`。
+
+驗證：
+
+- `node --check background.js`
+- `node --check experiment/api.js`
+- `node --check popup/popup.js`
+- `node --test tests/*.test.js`
+  - sandbox 內第一次執行遇到 `spawn EPERM`，提升權限重跑後 23 tests passed。
+- `manifest.json` / `package.json` JSON parse OK。
+- `git diff --check`
+  - 無 whitespace error；僅顯示 Windows checkout 的 LF/CRLF warning。
+- `zen-tabs-panel.xpi`
+  - `make` 不在目前 Windows shell PATH 內，因此改用 PowerShell/.NET 依 Makefile 來源清單打包。
+  - XPI entry path 已確認使用 `/`，`manifest.json` 在 root。
+
 ## 目前工作樹注意事項
 
 截至 2026-05-16 18:21，本地工作樹有尚未 commit 的 `0.3.1-ui-restore` 修改。

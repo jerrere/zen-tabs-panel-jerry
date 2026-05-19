@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zen Tabs Panel",
-  "version": "0.4.2",
-  "version_name": "0.4.2",
+  "version": "0.4.3",
+  "version_name": "0.4.3",
   "description": "Tab management command palette and utilities for Zen Browser",
   "author": "c13v",
 
@@ -64,6 +64,13 @@
         "mac": "MacCtrl+Command+P"
       },
       "description": "Go to previous tab"
+    },
+    "open-recent-tabs": {
+      "suggested_key": {
+        "default": "Ctrl+Alt+R",
+        "mac": "MacCtrl+Command+R"
+      },
+      "description": "Open recent tabs"
     }
   },
 

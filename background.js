@@ -287,6 +287,9 @@ browser.commands.onCommand.addListener((command) => {
     case "go-to-previous-tab":
       browser.zenWorkspaces.goToPreviousTab();
       break;
+    case "open-recent-tabs":
+      browser.zenWorkspaces.showPalette("last-visited");
+      break;
   }
 });
 
