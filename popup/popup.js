@@ -57,31 +57,67 @@ function activateTab(domId) {
 
 function getActions() {
   return [
-    { id: "go-to-previous-tab", label: "Previous", hotkey: "P", icon: "svg:arrow-left-right", preview: previousTabPreview },
-    { type: "title-search" },
-    { type: "separator" },
-    { id: "go-to-parent-tab", label: "Parent", hotkey: "T", icon: "svg:move-up", needsParent: true, preview: parentTabPreview, compact: true },
-    { id: "child-tabs", label: "Children", hotkey: "C", icon: "svg:move-down", isView: true, needsChildren: true, count: childTabCount, compact: true },
-    { id: "sibling-tabs", label: "Siblings", hotkey: "B", icon: "svg:git-branch", isView: true, needsSiblings: true, count: siblingTabCount, compact: true },
-    { id: "parent-tabs", label: "Parent tabs", hotkey: "⇧T", icon: "svg:parent-node", isView: true, compact: true },
-    { id: "navigation", label: "Navigation", hotkey: "N", icon: "svg:history", isView: true, compact: true },
-    { id: "unvisited-tabs", label: "New tabs", hotkey: "⇧N", icon: "svg:circle-dot", isView: true, needsUnvisited: true, count: unvisitedTabCount, compact: true },
-    { id: "last-visited", label: "Recent", hotkey: "R", icon: "svg:clock", isView: true, compact: true },
-    { id: "duplicates", label: "Duplicates", hotkey: "D", icon: "svg:copy", isView: true, needsDuplicates: true, count: duplicateGroupCount, compact: true },
-    { id: "tab-info", label: "Tab info", hotkey: "I", icon: "svg:info", isView: true, compact: true },
-    { id: "domains", label: "Domains", hotkey: "⇧D", icon: "svg:globe", isView: true, compact: true },
-    { id: "tabs-by-age", label: "Tabs by age", hotkey: "A", icon: "svg:calendar-clock", isView: true, compact: true },
-    { id: "most-visited", label: "Most visited", hotkey: "V", icon: "svg:star", isView: true, compact: true },
-    { type: "separator" },
-    { id: "move-tab-to-start", label: "Move to start", hotkey: "S", icon: "svg:arrow-up-to-line", compact: true },
-    { id: "move-tab-to-end", label: "Move to end", hotkey: "E", icon: "svg:arrow-down-to-line", compact: true },
-    { id: "reorder-tabs", label: "Reorder tabs", hotkey: "O", icon: "svg:arrow-up-down", isView: true, compact: true },
-    { id: "move-to-workspace", label: "Move to workspace", hotkey: "M", icon: "svg:arrow-right-to-line", isView: true, count: selectedTabCount > 1 ? selectedTabCount : 0, compact: true },
-    { id: "scroll-to-current-tab", label: "Scroll to tab", hotkey: "L", icon: "svg:locate", compact: true },
-    { id: "unload-tab", label: "Unload", hotkey: "U", icon: "svg:moon", compact: true },
-    { id: "settings", label: "Settings", hotkey: "," , icon: "svg:gear", compact: true },
-    { type: "separator" },
-    { type: "workspaces" },
+    {
+      type: "section",
+      id: "navigate",
+      title: "Navigate",
+      items: [
+        { id: "go-to-previous-tab", label: "Previous", hotkey: "P", icon: "svg:arrow-left-right", preview: previousTabPreview },
+        { type: "title-search" },
+        { id: "go-to-parent-tab", label: "Parent", hotkey: "T", icon: "svg:move-up", needsParent: true, preview: parentTabPreview, compact: true },
+        { id: "child-tabs", label: "Children", hotkey: "C", icon: "svg:move-down", isView: true, needsChildren: true, count: childTabCount, compact: true },
+      ],
+    },
+    {
+      type: "section",
+      id: "this-tab",
+      title: "This tab",
+      items: [
+        { id: "sibling-tabs", label: "Siblings", hotkey: "B", icon: "svg:git-branch", isView: true, needsSiblings: true, count: siblingTabCount, compact: true },
+        { id: "navigation", label: "Navigation", hotkey: "N", icon: "svg:history", isView: true, compact: true },
+        { id: "tab-info", label: "Tab info", hotkey: "I", icon: "svg:info", isView: true, compact: true },
+        { id: "unload-tab", label: "Unload", hotkey: "U", icon: "svg:moon", compact: true },
+      ],
+    },
+    {
+      type: "section",
+      id: "all-tabs",
+      title: "All tabs",
+      items: [
+        { id: "parent-tabs", label: "Parent tabs", hotkey: "⇧T", icon: "svg:parent-node", isView: true, compact: true },
+        { id: "unvisited-tabs", label: "New tabs", hotkey: "⇧N", icon: "svg:circle-dot", isView: true, needsUnvisited: true, count: unvisitedTabCount, compact: true },
+        { id: "last-visited", label: "Recent", hotkey: "R", icon: "svg:clock", isView: true, compact: true },
+        { id: "duplicates", label: "Duplicates", hotkey: "D", icon: "svg:copy", isView: true, needsDuplicates: true, count: duplicateGroupCount, compact: true },
+        { id: "domains", label: "Domains", hotkey: "⇧D", icon: "svg:globe", isView: true, compact: true },
+        { id: "tabs-by-age", label: "Tabs by age", hotkey: "A", icon: "svg:calendar-clock", isView: true, compact: true },
+        { id: "most-visited", label: "Most visited", hotkey: "V", icon: "svg:star", isView: true, compact: true },
+      ],
+    },
+    {
+      type: "section",
+      id: "organize",
+      title: "Organize",
+      items: [
+        { id: "move-tab-to-start", label: "Move to start", hotkey: "S", icon: "svg:arrow-up-to-line", compact: true },
+        { id: "move-tab-to-end", label: "Move to end", hotkey: "E", icon: "svg:arrow-down-to-line", compact: true },
+        { id: "reorder-tabs", label: "Reorder tabs", hotkey: "O", icon: "svg:arrow-up-down", isView: true, compact: true },
+        { id: "move-to-workspace", label: "Move to workspace", hotkey: "M", icon: "svg:arrow-right-to-line", isView: true, count: selectedTabCount > 1 ? selectedTabCount : 0, compact: true },
+        { id: "scroll-to-current-tab", label: "Scroll to tab", hotkey: "L", icon: "svg:locate", compact: true },
+      ],
+    },
+    {
+      type: "section",
+      id: "workspaces",
+      title: "Workspaces",
+      items: [{ type: "workspaces" }],
+    },
+    {
+      type: "utility",
+      id: "utility",
+      items: [
+        { id: "settings", label: "Settings", hotkey: "," , icon: "svg:gear", compact: true },
+      ],
+    },
   ];
 }
 
@@ -187,118 +223,127 @@ function createTitleSearchRow() {
   return row;
 }
 
-function renderActions(actions, title) {
-  items = actions.filter((a) => a.type !== "separator" && a.type !== "workspaces" && a.type !== "title-search");
-  selectedIndex = -1;
-  sectionStarts = [0];
+function createActionElement(action) {
+  const disabled = isActionDisabled(action);
+  const el = document.createElement("div");
+  el.className = "list-item action-home-item" + (disabled ? " disabled" : "") + (action.compact ? " compact-item" : "");
+  el.dataset.id = action.id;
 
-  listEl.innerHTML = "";
-  let gridContainer = null;
-  let itemIndex = 0;
-
-  for (const action of actions) {
-    if (action.type === "separator") {
-      gridContainer = null;
-      const sep = document.createElement("div");
-      sep.className = "list-separator";
-      listEl.appendChild(sep);
-      sectionStarts.push(itemIndex);
-      continue;
+  let previewHtml = "";
+  if (action.preview && !disabled) {
+    let prevFav = action.preview.favIconUrl || "";
+    if (prevFav.startsWith("moz-remote-image://")) {
+      try { prevFav = new URL(prevFav).searchParams.get("url") || ""; } catch (e) { prevFav = ""; }
     }
-
-    if (action.type === "workspaces") {
-      gridContainer = null;
-      renderWorkspaceSwitcher(listEl);
-      continue;
-    }
-
-    if (action.type === "title-search") {
-      gridContainer = null;
-      listEl.appendChild(createTitleSearchRow());
-      continue;
-    }
-
-    const disabled = isActionDisabled(action);
-
-    const el = document.createElement("div");
-    el.className = "list-item" + (disabled ? " disabled" : "") + (action.compact ? " compact-item" : "");
-    el.dataset.id = action.id;
-
-    // Build preview HTML for Previous/Parent
-    let previewHtml = "";
-    if (action.preview && !disabled) {
-      let prevFav = action.preview.favIconUrl || "";
-      if (prevFav.startsWith("moz-remote-image://")) {
-        try { prevFav = new URL(prevFav).searchParams.get("url") || ""; } catch (e) { prevFav = ""; }
-      }
-      const canLoad = prevFav && !prevFav.startsWith("chrome://");
-      const iconHtml = canLoad
-        ? `<img class="preview-icon" src="${escapeAttr(prevFav)}">`
-        : `<span class="preview-icon-placeholder">○</span>`;
-      const previewTitle = escapeHtml(action.preview.title || "Untitled");
-      let wsLabel = "";
-      if (action.preview.workspaceId && action.preview.workspaceId !== activeWorkspaceId) {
-        const ws = workspaceMap[action.preview.workspaceId];
-        if (ws) {
-          const wsIcon = renderWorkspaceIcon(ws, "preview-ws-icon");
-          wsLabel = `<span class="preview-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
-        }
-      }
-      previewHtml = `<span class="action-preview">${iconHtml}<span class="preview-title">${previewTitle}</span>${wsLabel}</span>`;
-    }
-
-    // Build count badge
-    let countHtml = "";
-    if (typeof action.count === "number" && action.count > 0) {
-      countHtml = `<span class="item-count">${action.count}</span>`;
-    }
-
-    const rightContent = `
-      ${previewHtml}
-      ${action.hotkey ? `<span class="item-badge${action.hotkey.length > 1 ? " badge-wide" : ""}">${action.hotkey}</span>` : ""}
-      <span class="item-arrow">${action.isView ? "›" : ""}</span>
-    `;
-
-    el.innerHTML = `
-      <span class="item-icon-placeholder">${getIcon(action.icon)}</span>
-      <span class="item-text">
-        <span class="item-title">${action.label}${countHtml}</span>
-      </span>
-      <span class="item-right">${rightContent}</span>
-    `;
-
-    // Handle preview icon errors
-    const img = el.querySelector("img.preview-icon");
-    if (img) {
-      img.addEventListener("error", () => { img.style.display = "none"; });
-    }
-
-    if (!disabled) {
-      el.addEventListener("click", () => activateAction(action));
-      if (action.preview?.domId) {
-        el.addEventListener("mouseenter", () => {
-          ext.runtime.sendMessage({ type: "preview-tab", domId: action.preview.domId }).catch(() => {});
-        });
-        el.addEventListener("mouseleave", () => {
-          ext.runtime.sendMessage({ type: "clear-preview" }).catch(() => {});
-        });
+    const canLoad = prevFav && !prevFav.startsWith("chrome://");
+    const iconHtml = canLoad
+      ? `<img class="preview-icon" src="${escapeAttr(prevFav)}">`
+      : `<span class="preview-icon-placeholder">○</span>`;
+    const previewTitle = escapeHtml(action.preview.title || "Untitled");
+    let wsLabel = "";
+    if (action.preview.workspaceId && action.preview.workspaceId !== activeWorkspaceId) {
+      const ws = workspaceMap[action.preview.workspaceId];
+      if (ws) {
+        const wsIcon = renderWorkspaceIcon(ws, "preview-ws-icon");
+        wsLabel = `<span class="preview-workspace">${wsIcon}${escapeHtml(ws.name)}</span>`;
       }
     }
-
-    if (action.compact) {
-      if (!gridContainer) {
-        gridContainer = document.createElement("div");
-        gridContainer.className = "actions-grid";
-        listEl.appendChild(gridContainer);
-      }
-      gridContainer.appendChild(el);
-    } else {
-      gridContainer = null;
-      listEl.appendChild(el);
-    }
-    itemIndex++;
+    previewHtml = `<span class="action-preview">${iconHtml}<span class="preview-title">${previewTitle}</span>${wsLabel}</span>`;
   }
 
+  let countHtml = "";
+  if (typeof action.count === "number" && action.count > 0) {
+    countHtml = `<span class="item-count">${action.count}</span>`;
+  }
+
+  const rightContent = `
+    ${previewHtml}
+    ${action.hotkey ? `<span class="item-badge${action.hotkey.length > 1 ? " badge-wide" : ""}">${escapeHtml(action.hotkey)}</span>` : ""}
+    <span class="item-arrow">${action.isView ? "›" : ""}</span>
+  `;
+
+  el.innerHTML = `
+    <span class="item-icon-placeholder">${getIcon(action.icon)}</span>
+    <span class="item-text">
+      <span class="item-title">${escapeHtml(action.label)}${countHtml}</span>
+    </span>
+    <span class="item-right">${rightContent}</span>
+  `;
+
+  const img = el.querySelector("img.preview-icon");
+  if (img) img.addEventListener("error", () => { img.style.display = "none"; });
+
+  if (!disabled) {
+    el.addEventListener("click", () => activateAction(action));
+    if (action.preview?.domId) {
+      el.addEventListener("mouseenter", () => {
+        ext.runtime.sendMessage({ type: "preview-tab", domId: action.preview.domId }).catch(() => {});
+      });
+      el.addEventListener("mouseleave", () => {
+        ext.runtime.sendMessage({ type: "clear-preview" }).catch(() => {});
+      });
+    }
+  }
+
+  return el;
+}
+
+function renderActions(sections, title) {
+  items = [];
+  selectedIndex = -1;
+  sectionStarts = [];
+  listEl.innerHTML = "";
+
+  const sectionsEl = document.createElement("div");
+  sectionsEl.className = "actions-sections";
+  listEl.appendChild(sectionsEl);
+
+  let itemIndex = 0;
+  for (const section of sections) {
+    const sectionEl = document.createElement("section");
+    sectionEl.className = `action-section action-section-${section.id}`;
+
+    if (section.title) {
+      const heading = document.createElement("h2");
+      heading.className = "action-section-title";
+      heading.textContent = section.title;
+      sectionEl.appendChild(heading);
+    }
+
+    const body = document.createElement("div");
+    body.className = "action-section-body";
+    sectionEl.appendChild(body);
+
+    let hasSelectableItems = false;
+    const sectionStart = itemIndex;
+
+    for (const action of section.items) {
+      if (action.type === "title-search") {
+        body.appendChild(createTitleSearchRow());
+        continue;
+      }
+
+      if (action.type === "workspaces") {
+        const workspaceItems = renderWorkspaceSwitcher(body);
+        if (workspaceItems.length > 0) {
+          hasSelectableItems = true;
+          items.push(...workspaceItems);
+          itemIndex += workspaceItems.length;
+        }
+        continue;
+      }
+
+      body.appendChild(createActionElement(action));
+      hasSelectableItems = true;
+      items.push(action);
+      itemIndex++;
+    }
+
+    if (hasSelectableItems) sectionStarts.push(sectionStart);
+    sectionsEl.appendChild(sectionEl);
+  }
+
+  if (sectionStarts.length === 0) sectionStarts = [0];
   updateSelection();
   updateHeader(title);
 }
@@ -530,6 +575,8 @@ function createDuplicateTabElement(tab) {
 }
 
 function updateHeader(title, hint) {
+  listEl.classList.toggle("actions-home", currentView === "actions");
+
   if (!title) {
     headerEl.classList.add("hidden");
     backButton.classList.add("hidden");
@@ -807,6 +854,10 @@ function activateSelected() {
   } else if (item.domain) {
     currentDomain = item.domain;
     showDomainTabs(item.domain);
+  } else if (item.switchWorkspaceId) {
+    if (item.switchWorkspaceId !== activeWorkspaceId) {
+      ext.runtime.sendMessage({ type: "switch-workspace", workspaceId: item.switchWorkspaceId }).catch(() => {});
+    }
   } else if (item.uuid) {
     moveToWorkspace(item.uuid);
   } else if (item.domId) {
@@ -2152,10 +2203,11 @@ async function showMostVisited(animate) {
 
 function renderWorkspaceSwitcher(container) {
   const allWorkspaces = Object.entries(workspaceMap);
-  if (allWorkspaces.length === 0) return;
+  if (allWorkspaces.length === 0) return [];
 
   const grid = document.createElement("div");
-  grid.className = "actions-grid";
+  grid.className = "actions-grid workspace-switcher-grid";
+  const workspaceItems = [];
 
   for (let i = 0; i < allWorkspaces.length; i++) {
     const [uuid, ws] = allWorkspaces[i];
@@ -2191,9 +2243,15 @@ function renderWorkspaceSwitcher(container) {
     }
 
     grid.appendChild(el);
+    workspaceItems.push({
+      label: ws.name,
+      hotkey: badge,
+      switchWorkspaceId: uuid,
+    });
   }
 
   container.appendChild(grid);
+  return workspaceItems;
 }
 
 function moveToWorkspace(workspaceId) {

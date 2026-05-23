@@ -473,6 +473,47 @@ zen-tabs-panel-0.3.1-ui-restore-title-sort.xpi
   - `make` 不在目前 Windows shell PATH 內，因此改用 PowerShell/.NET 依 Makefile 來源清單打包。
   - XPI entry path 已確認使用 `/`，`manifest.json` 在 root。
 
+### 2026-05-23 - original-style wide categorized palette
+
+需求：
+
+- 把目前 palette 首頁改成接近原作者新版 UI 的寬版多欄分類。
+- 分類標題使用：`Navigate` / `This tab` / `All tabs` / `Organize` / `Workspaces`。
+- 保留目前已有功能，尤其搜尋列 `Search tab titles` 和 `Z` 搜尋快捷鍵不要移除。
+
+做了什麼：
+
+- `popup/popup.js`
+  - 將首頁 action 清單改成 section-based renderer。
+  - 分類 mapping：
+    - `Navigate`: `Previous`, 搜尋列, `Parent`, `Children`
+    - `This tab`: `Siblings`, `Navigation`, `Tab info`, `Unload`
+    - `All tabs`: `Parent tabs`, `New tabs`, `Recent`, `Duplicates`, `Domains`, `Tabs by age`, `Most visited`
+    - `Organize`: `Move to start`, `Move to end`, `Reorder tabs`, `Move to workspace`, `Scroll to tab`
+    - `Workspaces`: 現有 workspace switcher
+  - 保留原本 action `id` / hotkey / message handler，因此功能路徑不變。
+  - workspace switcher 現在也加入首頁 `items`，讓鍵盤 selection/Enter 可正常切換 workspace。
+- `popup/popup.css`
+  - 首頁新增 `actions-home` 寬版四欄 layout。
+  - `Navigate` 區塊橫跨前兩欄，搜尋列和 `Previous` 佔滿寬度，接近原作者 palette 的第一區視覺。
+  - 子頁面 tab list / info / domains / age 等既有樣式不改。
+- `experiment/api.js`
+  - palette 外層 panel / embedded browser 尺寸由 `600x604` 改為 `960x576`。
+
+驗證：
+
+- 一開始系統 `node.exe` 在 sandbox/提升權限下都回 `Access is denied`，改用 Codex bundled Node：
+  - `C:\Users\jerry51311\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
+- `node --check popup/popup.js`
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`
+  - 23 tests passed。
+- `git diff --check`
+  - 無 whitespace error；僅顯示 Windows checkout 的 LF/CRLF warning。
+- 已重新打包 ignored 的 `zen-tabs-panel.xpi`。
+  - 第一次用 `Compress-Archive` 會壓扁資料夾路徑，已改用 PowerShell/.NET `ZipArchive` 明確保留相對路徑。
+  - 已確認 XPI 包含 `popup/popup.js`、`popup/popup.css`、`experiment/api.js` 等正確 entry path。
+
 ## 目前工作樹注意事項
 
 截至 2026-05-16 18:21，本地工作樹有尚未 commit 的 `0.3.1-ui-restore` 修改。
