@@ -75,6 +75,13 @@
         "parameters": []
       },
       {
+        "name": "initTabTracking",
+        "type": "function",
+        "async": true,
+        "description": "Start per-tab focus tracking used by the Most visited view",
+        "parameters": []
+      },
+      {
         "name": "getCompanionMods",
         "type": "function",
         "async": true,

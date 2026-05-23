@@ -515,6 +515,7 @@ browser.menus.onClicked.addListener(async (info) => {
 
 browser.zenWorkspaces.getActiveWorkspaceId().catch(() => {});
 browser.zenWorkspaces.syncDuplicates().catch(() => {});
+browser.zenWorkspaces.initTabTracking().catch(() => {});
 
 // Show welcome page on first install
 browser.runtime.onInstalled.addListener(async (details) => {

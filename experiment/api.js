@@ -1,4 +1,4 @@
-/* globals ExtensionAPI, Services */
+/* globals ExtensionAPI, Services, ChromeUtils */
 "use strict";
 
 this.zenWorkspaces = class extends ExtensionAPI {
@@ -87,6 +87,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
           w.removeEventListener("keydown", essentialCtrlTabGuard, true);
           essentialCtrlTabGuard = null;
         }
+        try { teardownTabTracking(); } catch (e) {}
         const overlay = w.document.getElementById("zen-tabs-panel-overlay");
         if (overlay) overlay.remove();
       },
@@ -260,6 +261,163 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const w = getWin();
       if (!w || !w.document) return [];
       return Array.from(w.document.querySelectorAll(".tabbrowser-tab"));
+    }
+
+    let SS = null;
+    let SS_GET = null;
+    let SS_SET = null;
+    try {
+      SS = ChromeUtils.importESModule(
+        "resource:///modules/sessionstore/SessionStore.sys.mjs"
+      ).SessionStore;
+      SS_GET = SS && (SS.getCustomTabValue || SS.getTabValue) || null;
+      SS_SET = SS && (SS.setCustomTabValue || SS.setTabValue) || null;
+    } catch (e) {
+      SS = null;
+    }
+
+    const tabMemoryStore = new WeakMap();
+    const STATS_VERSION = 1;
+    const STATS_DEFAULT = Object.freeze({
+      v: STATS_VERSION,
+      focusCount: 0,
+      focusDurationSeconds: 0,
+      createdAt: 0,
+    });
+
+    function readTabValue(tab, key) {
+      try {
+        if (SS_GET) {
+          const raw = SS_GET.call(SS, tab, key);
+          if (raw === undefined || raw === null || raw === "") return undefined;
+          try { return JSON.parse(raw); } catch (e) { return raw; }
+        }
+      } catch (e) {}
+      const mem = tabMemoryStore.get(tab);
+      return mem ? mem[key] : undefined;
+    }
+
+    function writeTabValue(tab, key, value) {
+      try {
+        if (SS_SET) {
+          SS_SET.call(SS, tab, key, JSON.stringify(value));
+          return;
+        }
+      } catch (e) {}
+      let mem = tabMemoryStore.get(tab);
+      if (!mem) {
+        mem = {};
+        tabMemoryStore.set(tab, mem);
+      }
+      mem[key] = value;
+    }
+
+    function readTabStats(tab) {
+      const stored = readTabValue(tab, "panelStats");
+      if (!stored || typeof stored !== "object") return { ...STATS_DEFAULT };
+      if (stored.v !== STATS_VERSION) return { ...STATS_DEFAULT, ...stored, v: STATS_VERSION };
+      return stored;
+    }
+
+    function writeTabStats(tab, patch) {
+      const current = readTabStats(tab);
+      writeTabValue(tab, "panelStats", { ...current, ...patch, v: STATS_VERSION });
+    }
+
+    let focusState = { tab: null, startedAt: 0, paused: false };
+    const tabAccumMs = new WeakMap();
+
+    function recordFocusInterval() {
+      if (!focusState.tab || focusState.paused) return;
+      const elapsed = Math.max(0, Date.now() - focusState.startedAt);
+      if (elapsed === 0) return;
+      const tab = focusState.tab;
+      const total = (tabAccumMs.get(tab) || 0) + elapsed;
+      const wholeSec = Math.floor(total / 1000);
+      if (wholeSec > 0) {
+        const stats = readTabStats(tab);
+        stats.focusDurationSeconds = (stats.focusDurationSeconds || 0) + wholeSec;
+        writeTabStats(tab, stats);
+      }
+      tabAccumMs.set(tab, total - wholeSec * 1000);
+      focusState.startedAt = Date.now();
+    }
+
+    function endFocus() {
+      recordFocusInterval();
+      focusState = { tab: null, startedAt: 0, paused: false };
+    }
+
+    function beginFocus(tab) {
+      if (!tab) return;
+      if (focusState.tab === tab && !focusState.paused) return;
+      endFocus();
+      try {
+        const stats = readTabStats(tab);
+        stats.focusCount = (stats.focusCount || 0) + 1;
+        if (!stats.createdAt) stats.createdAt = Date.now();
+        writeTabStats(tab, stats);
+      } catch (e) {}
+      focusState = { tab, startedAt: Date.now(), paused: false };
+    }
+
+    const TAB_TRACKING_KEY = "__zenTabsPanelFocusTracking";
+    let tabTrackingInstalled = false;
+    let tabTrackingListeners = null;
+
+    function ensureTabTracking() {
+      if (tabTrackingInstalled) return;
+      const w = getWin();
+      if (!w || !w.gBrowser || !w.gBrowser.tabContainer) return;
+      try {
+        const prior = w[TAB_TRACKING_KEY];
+        if (prior && prior.container) {
+          try {
+            prior.container.removeEventListener("TabOpen", prior.onOpen);
+            prior.container.removeEventListener("TabSelect", prior.onSelect);
+            prior.container.removeEventListener("TabClose", prior.onClose);
+          } catch (e) {}
+        }
+
+        const onOpen = (event) => {
+          try {
+            const stats = readTabStats(event.target);
+            if (!stats.createdAt) writeTabStats(event.target, { ...stats, createdAt: Date.now() });
+          } catch (e) {}
+        };
+        const onSelect = (event) => beginFocus(event.target);
+        const onClose = (event) => {
+          try { if (focusState.tab === event.target) endFocus(); } catch (e) {}
+        };
+
+        w.gBrowser.tabContainer.addEventListener("TabOpen", onOpen);
+        w.gBrowser.tabContainer.addEventListener("TabSelect", onSelect);
+        w.gBrowser.tabContainer.addEventListener("TabClose", onClose);
+        tabTrackingListeners = { container: w.gBrowser.tabContainer, onOpen, onSelect, onClose };
+        w[TAB_TRACKING_KEY] = tabTrackingListeners;
+        if (w.gBrowser.selectedTab) {
+          focusState = { tab: w.gBrowser.selectedTab, startedAt: Date.now(), paused: false };
+        }
+        tabTrackingInstalled = true;
+      } catch (e) {}
+    }
+
+    function teardownTabTracking() {
+      try { recordFocusInterval(); } catch (e) {}
+      if (tabTrackingListeners) {
+        try {
+          const { container, onOpen, onSelect, onClose } = tabTrackingListeners;
+          container.removeEventListener("TabOpen", onOpen);
+          container.removeEventListener("TabSelect", onSelect);
+          container.removeEventListener("TabClose", onClose);
+        } catch (e) {}
+        const w = getWin();
+        if (w && w[TAB_TRACKING_KEY] === tabTrackingListeners) {
+          delete w[TAB_TRACKING_KEY];
+        }
+      }
+      tabTrackingListeners = null;
+      tabTrackingInstalled = false;
     }
 
     const DUP_INDICATOR_CSS = `
@@ -652,6 +810,9 @@ this.zenWorkspaces = class extends ExtensionAPI {
 
         // Get ALL tabs across ALL workspaces.
         async getAllTabs() {
+          ensureTabTracking();
+          try { recordFocusInterval(); } catch (e) {}
+
           const tabElements = getAllTabElements();
           const w = getWin();
           const results = [];
@@ -670,6 +831,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
 
           for (const tab of tabElements) {
             const extId = getExtTabId(tab);
+            const panelStats = readTabStats(tab);
 
             results.push({
               id: extId,
@@ -685,9 +847,16 @@ this.zenWorkspaces = class extends ExtensionAPI {
               openerTabDomId: tab.openerTab?.id || null,
               splitView: tab.hasAttribute("split-view"),
               splitGroupId: tabToGroupId.get(tab.id) || null,
+              panelStats,
+              focusCount: panelStats.focusCount || 0,
             });
           }
           return results;
+        },
+
+        async initTabTracking() {
+          ensureTabTracking();
+          return true;
         },
 
         // ---------------------------------------------------------------

@@ -2106,26 +2106,11 @@ async function showMostVisited(animate) {
 
   let filtered = filterByWorkspace(allTabs.filter((t) => t.url && !t.url.startsWith("about:")));
 
-  // Get visit counts for all unique URLs in parallel
-  const uniqueUrls = [...new Set(filtered.map((t) => t.url))];
-  const visitCounts = {};
-  try {
-    const results = await Promise.all(
-      uniqueUrls.map((url) => ext.runtime.sendMessage({ type: "get-history-visits", url }).then(
-        (visits) => ({ url, count: visits.length }),
-        () => ({ url, count: 0 })
-      ))
-    );
-    for (const r of results) visitCounts[r.url] = r.count;
-  } catch (e) {}
+  filtered.sort((a, b) => (b.focusCount || 0) - (a.focusCount || 0));
 
-  // Sort by visit count descending
-  filtered.sort((a, b) => (visitCounts[b.url] || 0) - (visitCounts[a.url] || 0));
-
-  // Render using a custom list that shows visit count in subtitle
+  // Render using a custom list that shows per-tab focus count in subtitle.
   selectedIndex = -1;
   listEl.innerHTML = "";
-  const now = Date.now();
 
   if (filtered.length === 0) {
     items = [];
@@ -2140,7 +2125,7 @@ async function showMostVisited(animate) {
   for (let i = 0; i < filtered.length; i++) {
     const tab = filtered[i];
     const badge = (i + 1) <= 9 ? String(i + 1) : null;
-    const visits = visitCounts[tab.url] || 0;
+    const focuses = tab.focusCount || 0;
 
     const el = document.createElement("div");
     el.className = "list-item";
@@ -2166,7 +2151,7 @@ async function showMostVisited(animate) {
 
     const subtitleParts = [
       domain ? `<span class="subtitle-domain">${escapeHtml(domain)}</span>` : "",
-      `<span class="subtitle-age">${visits} visits</span>`,
+      `<span class="subtitle-age">${focuses} focuses</span>`,
       wsHtml,
     ].filter(Boolean).join("");
 
