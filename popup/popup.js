@@ -21,6 +21,7 @@ let siblingTabCount = 0;
 const listEl = document.getElementById("list");
 const headerEl = document.getElementById("header");
 const backButton = document.getElementById("back-button");
+const closeButton = document.getElementById("close-button");
 const viewTitle = document.getElementById("view-title");
 const headerHint = document.getElementById("header-hint");
 const footerEl = document.getElementById("footer");
@@ -2559,6 +2560,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 backButton.addEventListener("click", goBack);
+closeButton.addEventListener("click", closePalette);
 
 // ---------------------------------------------------------------------------
 // Helpers

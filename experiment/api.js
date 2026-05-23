@@ -637,7 +637,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
         "display: flex",
         "align-items: center",
         "justify-content: center",
-        "background: rgba(0, 0, 0, 0.25)",
+        "background: rgba(0, 0, 0, 0.18)",
         "animation: ztt-overlay-in 0.15s ease-out",
       ].join(";");
 
@@ -647,9 +647,9 @@ this.zenWorkspaces = class extends ExtensionAPI {
         "width: 960px",
         "max-height: 576px",
         "background: var(--arrowpanel-background, light-dark(rgb(244, 244, 244), rgb(31, 31, 31)))",
-        "border-radius: 12px",
-        "border: 1px solid var(--zen-colors-border, light-dark(rgba(0,0,0,0.15), rgba(255,255,255,0.08)))",
-        "box-shadow: 0 0 9.73px rgba(0, 0, 0, 0.25), 0 24px 60px rgba(0, 0, 0, 0.4)",
+        "border-radius: 22px",
+        "border: 1px solid var(--zen-colors-border, light-dark(rgba(35,44,70,0.12), rgba(255,255,255,0.08)))",
+        "box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32)",
         "overflow: hidden",
         "display: flex",
         "flex-direction: column",
