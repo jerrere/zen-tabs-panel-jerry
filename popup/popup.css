@@ -299,12 +299,7 @@ html, body {
 }
 
 .actions-home .action-section-navigate .action-section-title {
-  display: inline-flex;
   margin: 0 0 10px 8px;
-  padding: 2px 10px;
-  border-radius: 8px;
-  background: light-dark(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.06));
-  box-shadow: light-dark(0 4px 14px rgba(30, 36, 54, 0.06), none);
 }
 
 .actions-home .action-section-navigate .list-item,
@@ -393,6 +388,10 @@ html, body {
 }
 
 .actions-home .action-section-organize .item-arrow:empty {
+  display: block;
+}
+
+.actions-home .action-section-this-tab .item-arrow:empty {
   display: block;
 }
 

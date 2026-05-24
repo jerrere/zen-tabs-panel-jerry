@@ -75,7 +75,7 @@ function getActions() {
       title: "This tab",
       items: [
         { id: "sibling-tabs", label: "Siblings", hotkey: "B", icon: "svg:git-branch", isView: true, needsSiblings: true, count: siblingTabCount, compact: true },
-        { id: "navigation", label: "Navigation", hotkey: "N", icon: "svg:history", isView: true, compact: true },
+        { id: "navigation", label: "Tab History", hotkey: "N", icon: "svg:history", isView: true, compact: true },
         { id: "tab-info", label: "Tab info", hotkey: "I", icon: "svg:info", isView: true, compact: true },
         { id: "unload-tab", label: "Unload", hotkey: "U", icon: "svg:moon", compact: true },
       ],
@@ -1133,7 +1133,7 @@ async function showNavigation() {
 
   if (!history || !history.entries || history.entries.length === 0) {
     listEl.innerHTML = `<div class="empty-state">No navigation history</div>`;
-    updateHeader("Navigation");
+    updateHeader("Tab History");
     animateList("forward");
     return;
   }
@@ -1188,7 +1188,7 @@ async function showNavigation() {
   // Pre-select the current item
   selectedIndex = currentIndex;
   updateSelection();
-  updateHeader("Navigation");
+  updateHeader("Tab History");
   animateList("forward");
 }
 
