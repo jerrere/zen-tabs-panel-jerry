@@ -564,6 +564,43 @@ git push origin jerry-previous-tab-shortcut
 git push origin v0.3.1-ui-restore
 ```
 
+### 2026-05-28 - Rebased duplicate indicator fix onto v0.4.4
+
+#### Changed
+- Fast-forwarded local `main` to GitHub `origin/main` at `5fe1b71` / tag `v0.4.4`.
+- Reapplied the duplicate indicator stale-state fix on top of the v0.4.4 `experiment/api.js`.
+- Duplicate detection now ignores closing tabs, and duplicate marker syncing runs immediately plus one delayed pass.
+- `closeTabByDomId` now schedules duplicate marker syncing after removing a tab.
+
+#### Why
+- GitHub had moved to v0.4.4 after the original local fix was made against v0.4.3.
+- The amber duplicate diamond could remain after closing a duplicate because Zen's tab DOM can still include the closing tab during the first removal event sync.
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `git fetch origin main --tags`
+- `git merge --ff-only origin/main`
+- `node --check experiment/api.js`
+- `node --check background.js`
+- `node --check popup/popup.js`
+- `node --test tests/*.test.js` failed in sandbox with `spawn EPERM`; reran outside sandbox and 23 tests passed.
+- `git diff --check` passed, with only the existing LF/CRLF warning.
+
+#### Packaging
+- Rebuilt `zen-tabs-panel.xpi` from the Makefile source list with PowerShell/.NET `System.IO.Compression`.
+- Verified XPI `manifest.json` version is `0.4.4`.
+- Verified XPI `experiment/api.js` contains both v0.4.4 `initTabTracking` and the duplicate sync fix.
+- Verified XPI entries are root-level paths with `/` separators.
+- `zen-tabs-panel.xpi` SHA256: `9DC8A793FA491953DF4FA269BC638BAE119451399132F483B102907D915BE10F`.
+
+#### Follow-up
+- Install/reload the rebuilt XPI in Zen and close the last duplicate URL to confirm the amber diamond clears.
+- Continue rebuilding `zen-tabs-panel.xpi` after future meaningful source changes.
+
 ## 未來 Journal Entry 模板
 
 ```markdown

@@ -87,6 +87,10 @@ this.zenWorkspaces = class extends ExtensionAPI {
           w.removeEventListener("keydown", essentialCtrlTabGuard, true);
           essentialCtrlTabGuard = null;
         }
+        if (duplicateSyncTimer !== null) {
+          w.clearTimeout(duplicateSyncTimer);
+          duplicateSyncTimer = null;
+        }
         try { teardownTabTracking(); } catch (e) {}
         const overlay = w.document.getElementById("zen-tabs-panel-overlay");
         if (overlay) overlay.remove();
@@ -141,6 +145,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
     }
 
     let essentialCtrlTabGuard = null;
+    let duplicateSyncTimer = null;
 
     function installEssentialCtrlTabGuard() {
       const w = getWin();
@@ -261,6 +266,13 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const w = getWin();
       if (!w || !w.document) return [];
       return Array.from(w.document.querySelectorAll(".tabbrowser-tab"));
+    }
+
+    function getDuplicateUrl(tab) {
+      if (!tab || tab.closing) return "";
+      const url = tab.linkedBrowser?.currentURI?.spec || "";
+      if (!url || url === "about:newtab" || url === "about:blank") return "";
+      return url;
     }
 
     let SS = null;
@@ -475,19 +487,31 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const tabs = getAllTabElements();
       const urlCounts = {};
       for (const tab of tabs) {
-        const url = tab.linkedBrowser?.currentURI?.spec || "";
-        if (url && url !== "about:newtab" && url !== "about:blank") {
-          urlCounts[url] = (urlCounts[url] || 0) + 1;
-        }
+        const url = getDuplicateUrl(tab);
+        if (url) urlCounts[url] = (urlCounts[url] || 0) + 1;
       }
       for (const tab of tabs) {
-        const url = tab.linkedBrowser?.currentURI?.spec || "";
-        if (urlCounts[url] > 1) {
+        const url = getDuplicateUrl(tab);
+        if (url && urlCounts[url] > 1) {
           tab.setAttribute("zen-tabs-panel-duplicate", "true");
         } else {
           tab.removeAttribute("zen-tabs-panel-duplicate");
         }
       }
+    }
+
+    function scheduleDuplicateSync() {
+      syncDuplicateAttributes();
+
+      const w = getWin();
+      if (!w) return;
+      if (duplicateSyncTimer !== null) {
+        w.clearTimeout(duplicateSyncTimer);
+      }
+      duplicateSyncTimer = w.setTimeout(() => {
+        duplicateSyncTimer = null;
+        syncDuplicateAttributes();
+      }, 250);
     }
 
     // Activate a native tab, switching workspaces if needed
@@ -805,6 +829,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
           if (tab.pinned) return false;
 
           w.gBrowser.removeTab(tab);
+          scheduleDuplicateSync();
           return true;
         },
 
@@ -956,7 +981,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
         },
 
         async syncDuplicates() {
-          syncDuplicateAttributes();
+          scheduleDuplicateSync();
         },
 
         async getTabInfo(domId) {
