@@ -601,6 +601,43 @@ git push origin v0.3.1-ui-restore
 - Install/reload the rebuilt XPI in Zen and close the last duplicate URL to confirm the amber diamond clears.
 - Continue rebuilding `zen-tabs-panel.xpi` after future meaningful source changes.
 
+### 2026-05-28 - v0.4.5 release
+
+#### Changed
+- Bumped release version to `0.4.5`.
+- Kept the duplicate indicator stale-state fix and v0.4.4 tab tracking/API updates in the release build.
+- Rebuilt `zen-tabs-panel.xpi` after the version bump.
+
+#### Why
+- This build is the release version for the duplicate indicator fix.
+
+#### Files touched
+- `manifest.json`
+- `package.json`
+- `README.md`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `git fetch origin main --tags`
+- `node --check experiment/api.js`
+- `node --check background.js`
+- `node --check popup/popup.js`
+- JSON parse check for `manifest.json` and `package.json`
+- `node --test tests/*.test.js` failed in sandbox with `spawn EPERM`; reran outside sandbox and 23 tests passed.
+- `git diff --check` passed, with only the existing LF/CRLF warning.
+
+#### Packaging
+- Rebuilt the archive with PowerShell/.NET `System.IO.Compression`.
+- Verified XPI entries are root-level paths with `/` separators.
+- Verified XPI `manifest.json` version is `0.4.5`.
+- Verified XPI `experiment/api.js` contains duplicate sync fix and v0.4.4 tab tracking.
+- `zen-tabs-panel.xpi` SHA256: `49F11E7B9FDB9C942973EB343B228C7CE9DFBE7702658315A34ACB3E08065127`.
+
+#### Follow-up
+- Commit, tag `v0.4.5`, push `main`, and push the tag to trigger the GitHub release workflow.
+- Confirm the GitHub Actions release workflow completes and uploads `zen-tabs-panel.xpi`.
+
 ## 未來 Journal Entry 模板
 
 ```markdown
