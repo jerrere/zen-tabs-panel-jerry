@@ -522,6 +522,21 @@ this.zenWorkspaces = class extends ExtensionAPI {
       const tabWorkspace = tab.getAttribute("zen-workspace-id") || null;
       const activeWorkspace = w.gZenWorkspaces.activeWorkspace;
 
+      // Essentials show in every workspace, but still carry the
+      // zen-workspace-id they were created in. Never follow that id, and
+      // undo it if Zen moves the workspace while selecting the essential.
+      if (tab.hasAttribute("zen-essential")) {
+        w.gBrowser.selectedTab = tab;
+        const restore = () => {
+          if (activeWorkspace && w.gZenWorkspaces.activeWorkspace !== activeWorkspace) {
+            w.gZenWorkspaces.changeWorkspaceWithID(activeWorkspace).catch(() => {});
+          }
+        };
+        Promise.resolve().then(restore);
+        w.setTimeout(restore, 0);
+        return true;
+      }
+
       if (tabWorkspace && tabWorkspace !== activeWorkspace) {
         await w.gZenWorkspaces.changeWorkspaceWithID(tabWorkspace);
       }

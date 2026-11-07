@@ -666,6 +666,35 @@ git push origin v0.3.1-ui-restore
 - Commit, tag `v0.4.5`, push `main`, and push the tag to trigger the GitHub release workflow.
 - Confirm the GitHub Actions release workflow completes and uploads `zen-tabs-panel.xpi`.
 
+### 2026-11-07 - Previous tab 遇到 Essential 會被帶走 workspace
+
+#### Changed
+- `activateNativeTab()` 遇到 `zen-essential` tab 時，不再依它的 `zen-workspace-id` 切 workspace。
+- 選取 essential 後，用 microtask + 0ms timer 檢查，若 Zen 把 workspace 帶走就切回原本的 workspace（同 Ctrl+Tab guard 的做法）。
+
+#### Why
+- Essential 在所有 workspace 都顯示，但 DOM 上仍保留建立時的 `zen-workspace-id`。
+- 舊邏輯會照這個 id 切 workspace，所以跳到 essential 時 workspace 被換掉；換 workspace 又會更新別的 tab 的 `lastAccessed`，下一次 Previous tab 就回不到原本那個 tab。
+- 影響所有走 `activateNativeTab()` 的路徑：Previous tab、palette 選 tab、Parent tab。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 未做 live 驗證：Zen 沒開 debugger port 6000。
+
+#### Packaging
+- 依 Makefile 清單用 PowerShell/.NET `ZipArchive` 重新打包 `zen-tabs-panel.xpi`（17 entries，全部 `/` 路徑）。
+- 版本維持 `0.4.5`，已確認 XPI 內 `experiment/api.js` 含本次修正。
+- SHA256: `01D66CC841644816978F62999EA4291BFA1EE24631F51C047E01965FD9E2C042`。
+
+#### Follow-up
+- 安裝 XPI 後完整重啟 Zen 再測。
+- 若在 sidebar 直接點 essential 時 Zen 本身仍換 workspace，那是 Zen 原生行為，需另外處理。
+
 ## 未來 Journal Entry 模板
 
 ```markdown
