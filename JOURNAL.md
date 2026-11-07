@@ -746,6 +746,63 @@ git push origin v0.3.1-ui-restore
 - 原生 Ctrl+Tab 撞到 Essential 時可能換 workspace（0.4.0 前的舊行為）。
 - 預覽面板需 `browser.ctrlTab.sortByRecentlyUsed = true`。
 
+### 2026-11-07 - 外掛自己的 Ctrl+Tab 切換面板（含網頁預覽）
+
+#### 需求
+- 使用者用 AHK 把 Ctrl+Tab 映射成 Ctrl+Alt+P（Previous tab）以跨 workspace 切換，但這樣就失去按住 Ctrl 的預覽面板。
+- Zen 原生 Ctrl+Tab 面板只列目前 workspace 的分頁（其他 workspace 的 tab 是 hidden）。
+- 要一個新的小面板：跨 workspace、有網頁預覽；Recent 面板保留不動。
+
+#### Changed
+- `experiment/api.js` 新增 Ctrl+Tab switcher（`installCtrlTabSwitcher()` / `uninstallCtrlTabSwitcher()`）：
+  - window capture `keydown` 攔 Ctrl+Tab / Ctrl+Shift+Tab；palette overlay 開著時不攔。
+  - 快按：200ms 內放開 Ctrl → 直接跳上一個 tab（同 Previous tab）。
+  - 按住：顯示面板，Tab / Shift+Tab / 左右鍵移動，放開 Ctrl 或 Enter 切換，Esc 取消，滑鼠點卡片也可切換；視窗失焦自動取消。
+  - 清單：目前 tab + `tabHistory` + 其他 tab 依 `lastAccessed`，最多 8 張，跨所有 workspace，含 Essential。
+  - 每張卡片：網頁縮圖、favicon、顯示標題、workspace 名稱（Essential 顯示 `Essential`）。
+  - 切換走 `activateNativeTab()`，會自動切 workspace，Essential 不會帶走 workspace。
+- 縮圖：用 `PageThumbs.captureToCanvas()`；`TabSelect` 時擷取剛離開的 tab（同 Firefox 原生 tabPreviews 做法），面板打開時補擷取缺的與目前 tab；擷取失敗或未載入（`pending`）的 tab 顯示大 favicon。快取用 `WeakMap`，tab 關掉自動回收。
+- `README.md` 補上 Ctrl+Tab 說明。
+
+#### Files touched
+- `experiment/api.js`
+- `README.md`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 重新打包 XPI：17 entries，`/` 路徑，含 switcher 與 tab 歷史。SHA256 `29D1022EB07C875968D833E004BC98DCA5DD06066215C02A823EE5F4442ADD0F`。
+- 未做 live 驗證。
+
+#### Risks / Follow-up
+- 使用者需移除 AHK 的 Ctrl+Tab → Ctrl+Alt+P 映射。
+- 建議關閉 `browser.ctrlTab.sortByRecentlyUsed`，避免原生面板搶事件。
+- 背景 tab 縮圖是否成功、`PageThumbs` import 路徑在 Zen 版本是否正確，需實測；失敗時會退回 favicon。
+- Ctrl+Tab 鍵位固定，不在 Manage Extension Shortcuts 裡。
+
+### 2026-11-07 - Ctrl+Tab 面板與 Previous tab 排除 Zen 空白分頁
+
+#### Changed
+- `experiment/api.js` 新增 `isZenEmptyTab()`：`zen-empty-tab` 屬性或 `gZenWorkspaces._emptyTab`。
+- 空白分頁不進 `tabHistory`、不出現在 Ctrl+Tab 面板、不會成為 Previous tab 目標。
+- 目前 tab 是空白分頁時，面板第一張就是上一個 tab，預設選第一張。
+
+#### Why
+- 使用者實測 Ctrl+Tab 面板成功，但 workspace 開頭 Zen 自帶的「新分頁」也被列進來。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- XPI：17 entries，`/` 路徑，含 `isZenEmptyTab`。SHA256 `7256E938AE496B741B5B6BE35405D0DD0069E36AB06B205B5434C6FF1D850343`。
+- 未 live 驗證 `zen-empty-tab` 屬性名稱；使用者自己開的一般新分頁不會被排除。
+
 ## 未來 Journal Entry 模板
 
 ```markdown

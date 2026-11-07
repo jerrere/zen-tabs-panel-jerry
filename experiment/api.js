@@ -87,6 +87,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
           w.clearTimeout(duplicateSyncTimer);
           duplicateSyncTimer = null;
         }
+        try { uninstallCtrlTabSwitcher(); } catch (e) {}
         try { teardownTabTracking(); } catch (e) {}
         const overlay = w.document.getElementById("zen-tabs-panel-overlay");
         if (overlay) overlay.remove();
@@ -296,8 +297,15 @@ this.zenWorkspaces = class extends ExtensionAPI {
     let tabHistory = [];
     let tabHistoryTimer = null;
 
+    // Zen's placeholder "New Tab" that sits in an empty workspace.
+    function isZenEmptyTab(tab) {
+      if (!tab) return false;
+      if (tab.hasAttribute?.("zen-empty-tab")) return true;
+      try { return getWin()?.gZenWorkspaces?._emptyTab === tab; } catch (e) { return false; }
+    }
+
     function recordTabHistory(tab) {
-      if (!tab || tab.closing) return;
+      if (!tab || tab.closing || isZenEmptyTab(tab)) return;
       tabHistory = [tab, ...tabHistory.filter((t) => t !== tab)].slice(0, TAB_HISTORY_MAX);
     }
 
@@ -344,6 +352,11 @@ this.zenWorkspaces = class extends ExtensionAPI {
         const onSelect = (event) => {
           beginFocus(event.target);
           scheduleTabHistory();
+          // Keep a preview of the tab we just left for the Ctrl+Tab switcher.
+          const previousTab = event.detail?.previousTab;
+          if (previousTab && !previousTab.hasAttribute("busy")) {
+            w.setTimeout(() => captureThumb(previousTab), 0);
+          }
         };
         const onClose = (event) => {
           try { if (focusState.tab === event.target) endFocus(); } catch (e) {}
@@ -702,6 +715,302 @@ this.zenWorkspaces = class extends ExtensionAPI {
       return overlay && !overlay.dataset.closing;
     }
 
+    // -----------------------------------------------------------------------
+    // Ctrl+Tab switcher: recent tabs across all workspaces, with previews.
+    // Quick Ctrl+Tab = previous tab. Hold Ctrl = show panel, Tab cycles,
+    // releasing Ctrl switches. Esc cancels.
+    // -----------------------------------------------------------------------
+
+    const SWITCHER_ID = "zen-tabs-panel-switcher";
+    const SWITCHER_MAX_TABS = 8;
+    const SWITCHER_SHOW_DELAY_MS = 200;
+    const THUMB_WIDTH = 220;
+    const THUMB_HEIGHT = 138;
+
+    let pageThumbs = null;
+    const thumbCache = new WeakMap(); // tab element -> data URL
+    let switcher = null; // { tabs, index, shown, showTimer, cards }
+    let switcherListeners = null;
+
+    function getPageThumbs() {
+      if (pageThumbs) return pageThumbs;
+      try {
+        pageThumbs = ChromeUtils.importESModule("resource://gre/modules/PageThumbs.sys.mjs").PageThumbs;
+      } catch (e) {
+        pageThumbs = null;
+      }
+      return pageThumbs;
+    }
+
+    async function captureThumb(tab) {
+      const w = getWin();
+      const thumbs = getPageThumbs();
+      const browser = tab?.linkedBrowser;
+      if (!w || !thumbs || !browser || !tab.isConnected || tab.closing || tab.hasAttribute("pending")) return null;
+      try {
+        const scale = w.devicePixelRatio || 1;
+        const canvas = w.document.createElementNS("http://www.w3.org/1999/xhtml", "canvas");
+        canvas.width = Math.round(THUMB_WIDTH * scale);
+        canvas.height = Math.round(THUMB_HEIGHT * scale);
+        await thumbs.captureToCanvas(browser, canvas);
+        const url = canvas.toDataURL("image/jpeg", 0.85);
+        thumbCache.set(tab, url);
+        return url;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function getSwitcherTabs() {
+      const w = getWin();
+      const current = w?.gBrowser?.selectedTab;
+      const alive = (t) => t && t.isConnected && !t.closing && !isZenEmptyTab(t);
+      flushTabHistory();
+      const fromHistory = tabHistory.filter((t) => alive(t) && t !== current);
+      const rest = getAllTabElements()
+        .filter((t) => alive(t) && t !== current && !fromHistory.includes(t))
+        .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+      return [current, ...fromHistory, ...rest].filter(alive).slice(0, SWITCHER_MAX_TABS);
+    }
+
+    function getWorkspaceNameMap() {
+      const w = getWin();
+      const map = new Map();
+      try {
+        for (const ws of w.gZenWorkspaces.getWorkspaces() || []) map.set(ws.uuid, ws.name || "");
+      } catch (e) {}
+      return map;
+    }
+
+    function setThumbImage(card, url) {
+      if (!card || !url) return;
+      card.thumb.replaceChildren();
+      const img = card.thumb.ownerDocument.createElement("img");
+      img.src = url;
+      img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block";
+      card.thumb.appendChild(img);
+    }
+
+    function updateSwitcherSelection() {
+      if (!switcher?.cards) return;
+      switcher.cards.forEach((card, i) => {
+        const selected = i === switcher.index;
+        card.root.style.borderColor = selected ? "var(--zen-primary-color, AccentColor)" : "transparent";
+        card.root.style.background = selected
+          ? "color-mix(in srgb, var(--zen-primary-color, AccentColor) 16%, transparent)"
+          : "transparent";
+      });
+    }
+
+    function renderSwitcher() {
+      const w = getWin();
+      if (!w || !switcher) return;
+      const doc = w.document;
+      doc.getElementById(SWITCHER_ID)?.remove();
+
+      const root = doc.createElement("div");
+      root.id = SWITCHER_ID;
+      root.style.cssText = [
+        "position: fixed", "inset: 0", "z-index: 99999",
+        "display: flex", "align-items: center", "justify-content: center",
+        "pointer-events: none",
+      ].join(";");
+
+      const panel = doc.createElement("div");
+      panel.style.cssText = [
+        "pointer-events: auto",
+        "display: flex", "flex-wrap: wrap", "justify-content: center", "gap: 10px",
+        "max-width: 90vw", "padding: 14px",
+        "background: var(--arrowpanel-background, light-dark(rgb(244, 244, 244), rgb(31, 31, 31)))",
+        "color: var(--arrowpanel-color, light-dark(rgb(21, 20, 26), rgb(251, 251, 254)))",
+        "border: 1px solid var(--zen-colors-border, light-dark(rgba(35,44,70,0.12), rgba(255,255,255,0.08)))",
+        "border-radius: 16px",
+        "box-shadow: 0 22px 70px rgba(0, 0, 0, 0.32)",
+        "font: menu", "font-size: 12px",
+      ].join(";");
+
+      const names = getWorkspaceNameMap();
+      switcher.cards = switcher.tabs.map((tab, i) => {
+        const card = doc.createElement("div");
+        card.style.cssText = [
+          `width: ${THUMB_WIDTH}px`, "padding: 6px", "border-radius: 10px",
+          "border: 2px solid transparent", "cursor: default",
+          "display: flex", "flex-direction: column", "gap: 5px",
+        ].join(";");
+
+        const thumb = doc.createElement("div");
+        thumb.style.cssText = [
+          `width: ${THUMB_WIDTH}px`, `height: ${THUMB_HEIGHT}px`, "border-radius: 6px", "overflow: hidden",
+          "display: flex", "align-items: center", "justify-content: center",
+          "background: color-mix(in srgb, currentColor 8%, transparent)",
+        ].join(";");
+
+        const favUrl = unwrapFavicon(tab.image);
+        if (favUrl) {
+          const bigIcon = doc.createElement("img");
+          bigIcon.src = favUrl;
+          bigIcon.style.cssText = "width:32px;height:32px;opacity:0.7";
+          thumb.appendChild(bigIcon);
+        }
+
+        const titleRow = doc.createElement("div");
+        titleRow.style.cssText = "display:flex;align-items:center;gap:6px;min-width:0";
+        if (favUrl) {
+          const icon = doc.createElement("img");
+          icon.src = favUrl;
+          icon.style.cssText = "width:16px;height:16px;flex:none";
+          titleRow.appendChild(icon);
+        }
+        const title = doc.createElement("span");
+        title.textContent = getDisplayedTabTitle(tab) || tab.linkedBrowser?.currentURI?.spec || "";
+        title.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+        titleRow.appendChild(title);
+
+        const wsLabel = doc.createElement("div");
+        wsLabel.textContent = tab.hasAttribute("zen-essential")
+          ? "Essential"
+          : names.get(tab.getAttribute("zen-workspace-id")) || "";
+        wsLabel.style.cssText = "font-size:11px;opacity:0.65;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+
+        card.append(thumb, titleRow, wsLabel);
+        card.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!switcher) return;
+          switcher.index = i;
+          commitSwitcher();
+        });
+        panel.appendChild(card);
+
+        const entry = { root: card, thumb, tab };
+        const cached = thumbCache.get(tab);
+        if (cached) setThumbImage(entry, cached);
+        return entry;
+      });
+
+      root.appendChild(panel);
+      doc.documentElement.appendChild(root);
+      updateSwitcherSelection();
+
+      // Refresh previews: the current tab always, others only when missing.
+      const current = w.gBrowser.selectedTab;
+      for (const card of switcher.cards) {
+        if (card.tab !== current && thumbCache.has(card.tab)) continue;
+        captureThumb(card.tab).then((url) => {
+          if (switcher?.cards?.includes(card)) setThumbImage(card, url);
+        });
+      }
+    }
+
+    function showSwitcher() {
+      const w = getWin();
+      if (!switcher || switcher.shown) return;
+      if (switcher.showTimer !== null) w?.clearTimeout(switcher.showTimer);
+      switcher.showTimer = null;
+      switcher.shown = true;
+      renderSwitcher();
+    }
+
+    function closeSwitcher() {
+      const w = getWin();
+      if (switcher?.showTimer != null) w?.clearTimeout(switcher.showTimer);
+      switcher = null;
+      w?.document.getElementById(SWITCHER_ID)?.remove();
+    }
+
+    function commitSwitcher() {
+      const target = switcher?.tabs[switcher.index];
+      closeSwitcher();
+      const w = getWin();
+      if (!w || !target || !target.isConnected || target.closing || target === w.gBrowser.selectedTab) return;
+      activateNativeTab(target).catch(() => {});
+    }
+
+    function moveSwitcher(step) {
+      if (!switcher) return;
+      const len = switcher.tabs.length;
+      switcher.index = (switcher.index + step + len) % len;
+      if (!switcher.shown) showSwitcher();
+      else updateSwitcherSelection();
+    }
+
+    function openSwitcher(reverse) {
+      const w = getWin();
+      const tabs = getSwitcherTabs();
+      // When the current tab is Zen's empty tab it is left out of the list,
+      // so the first card is already the previous tab.
+      const firstIndex = tabs[0] === w?.gBrowser?.selectedTab ? 1 : 0;
+      if (!w || tabs.length <= firstIndex) return;
+      switcher = {
+        tabs,
+        index: reverse ? tabs.length - 1 : Math.min(firstIndex, tabs.length - 1),
+        shown: false,
+        showTimer: w.setTimeout(showSwitcher, SWITCHER_SHOW_DELAY_MS),
+        cards: null,
+      };
+    }
+
+    function installCtrlTabSwitcher() {
+      const w = getWin();
+      if (!w || switcherListeners) return;
+
+      const stop = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      };
+
+      const onKeyDown = (event) => {
+        const isCtrlTab = event.key === "Tab" && event.ctrlKey && !event.altKey && !event.metaKey;
+        if (isCtrlTab) {
+          if (isOverlayOpen()) return;
+          stop(event);
+          if (!switcher) openSwitcher(event.shiftKey);
+          else moveSwitcher(event.shiftKey ? -1 : 1);
+          return;
+        }
+        if (!switcher) return;
+        if (event.key === "Escape") {
+          stop(event);
+          closeSwitcher();
+        } else if (event.key === "Enter") {
+          stop(event);
+          commitSwitcher();
+        } else if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          stop(event);
+          moveSwitcher(event.key === "ArrowRight" ? 1 : -1);
+        }
+      };
+
+      const onKeyUp = (event) => {
+        if (switcher && event.key === "Control") commitSwitcher();
+      };
+
+      // Window lost focus while Ctrl was held: no keyup will come, so cancel.
+      const onBlur = (event) => {
+        if (switcher && event.target === w) closeSwitcher();
+      };
+
+      w.addEventListener("keydown", onKeyDown, true);
+      w.addEventListener("keyup", onKeyUp, true);
+      w.addEventListener("blur", onBlur);
+      switcherListeners = { w, onKeyDown, onKeyUp, onBlur };
+    }
+
+    function uninstallCtrlTabSwitcher() {
+      closeSwitcher();
+      if (!switcherListeners) return;
+      const { w, onKeyDown, onKeyUp, onBlur } = switcherListeners;
+      try {
+        w.removeEventListener("keydown", onKeyDown, true);
+        w.removeEventListener("keyup", onKeyUp, true);
+        w.removeEventListener("blur", onBlur);
+      } catch (e) {}
+      switcherListeners = null;
+    }
+
+    installCtrlTabSwitcher();
+
     return {
       zenWorkspaces: {
         async getAll() {
@@ -768,13 +1077,13 @@ this.zenWorkspaces = class extends ExtensionAPI {
           // switches workspaces on its own (e.g. around Essential tabs).
           flushTabHistory();
           const fromHistory = tabHistory.find(
-            (t) => t.isConnected && !t.closing && !visibleDomIds.has(t.id)
+            (t) => t.isConnected && !t.closing && !visibleDomIds.has(t.id) && !isZenEmptyTab(t)
           );
           if (fromHistory) return activateNativeTab(fromHistory);
 
           // Fallback: sort by lastAccessed descending, filter out visible and unread tabs
           const candidates = allTabs
-            .filter((t) => !visibleDomIds.has(t.id) && !t.hasAttribute("unread"))
+            .filter((t) => !visibleDomIds.has(t.id) && !t.hasAttribute("unread") && !isZenEmptyTab(t))
             .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 
           if (candidates.length === 0) return false;
