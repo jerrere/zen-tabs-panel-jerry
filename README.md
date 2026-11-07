@@ -1,6 +1,6 @@
 # Zen Tabs Panel
 
-**Version 0.4.5** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
+**Version 0.5.0** · Tested on Zen Browser 1.19.11b (Firefox 150.0.1)
 
 A keyboard-driven tab management extension for [Zen Browser](https://zen-browser.app/) with a command palette UI and optional companion Zen Mods.
 
@@ -49,6 +49,8 @@ This build keeps the original v0.3.0 palette UI and interactions, and restores i
 | Open palette | `Ctrl+Alt+.` | `Ctrl+Cmd+.` |
 | Go to previous tab | `Ctrl+Alt+P` | `Ctrl+Cmd+P` |
 | Open recent tabs | `Ctrl+Alt+R` | `Ctrl+Cmd+R` |
+
+`Ctrl+Tab` opens the extension's own tab switcher (fixed, not configurable). It lists recent tabs from all workspaces with page previews. Tap `Ctrl+Tab` to jump to the previous tab. Hold `Ctrl` and press `Tab` / `Shift+Tab` to pick a tab, then release `Ctrl` to switch. `Esc` cancels. Turn off Firefox's "Ctrl+Tab cycles through tabs in recently used order" setting so the native panel does not compete.
 
 | Panel key | Action |
 |---|---|

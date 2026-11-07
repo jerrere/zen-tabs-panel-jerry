@@ -22,6 +22,34 @@ origin   https://github.com/jerrere/zen-tabs-panel-jerry.git
 upstream https://github.com/cfilipov/zen-tabs-panel.git
 ```
 
+### 2026-05-31 - Popup preview artifact
+
+#### Changed
+- Added a standalone preview of the Navigate popup UI for the right-side HTML preview.
+- Copied the preview to `index.html` so the project preview can load it as the default page.
+- Added lightweight interaction for button selection, search focus, and status feedback.
+
+#### Why
+- The user wanted the screenshot's extension interface visible in the interactive preview window without changing the real extension popup implementation.
+
+#### Files touched
+- `index.html`
+- `popup-interface-preview.html`
+- `JOURNAL.md`
+
+#### Validation
+- Read `.od-skills/web-prototype-fef63bc1bc/assets/template.html`.
+- Read `.od-skills/web-prototype-fef63bc1bc/references/layouts.md`.
+- Read `.od-skills/web-prototype-fef63bc1bc/references/checklist.md`.
+- Reviewed `popup/popup.html`, `popup/popup.css`, and `popup/popup.js`.
+- Inspected `mptjadzp-PixPin_20260531_16-44-43.png` as the visual reference.
+- Ran `rg -n "#[0-9a-fA-F]{3,8}|scrollIntoView|Feature One|Feature Two|lorem|Lorem|purple|violet" index.html popup-interface-preview.html`.
+- Ran an extracted-script `node --check` against the inline JavaScript.
+- Attempted to open the in-app browser preview, but the browser surface reported unavailable; `index.html` is the fallback preview entry.
+
+#### Follow-up
+- If this preview should become the actual extension UI, port the visual changes into `popup/popup.css` / `popup/popup.js` and test inside Zen Browser.
+
 約定：
 
 - `origin` 是自己的 GitHub repo，用來保存自己的版本。
@@ -637,6 +665,185 @@ git push origin v0.3.1-ui-restore
 #### Follow-up
 - Commit, tag `v0.4.5`, push `main`, and push the tag to trigger the GitHub release workflow.
 - Confirm the GitHub Actions release workflow completes and uploads `zen-tabs-panel.xpi`.
+
+### 2026-11-07 - Previous tab 遇到 Essential 會被帶走 workspace
+
+#### Changed
+- `activateNativeTab()` 遇到 `zen-essential` tab 時，不再依它的 `zen-workspace-id` 切 workspace。
+- 選取 essential 後，用 microtask + 0ms timer 檢查，若 Zen 把 workspace 帶走就切回原本的 workspace（同 Ctrl+Tab guard 的做法）。
+
+#### Why
+- Essential 在所有 workspace 都顯示，但 DOM 上仍保留建立時的 `zen-workspace-id`。
+- 舊邏輯會照這個 id 切 workspace，所以跳到 essential 時 workspace 被換掉；換 workspace 又會更新別的 tab 的 `lastAccessed`，下一次 Previous tab 就回不到原本那個 tab。
+- 影響所有走 `activateNativeTab()` 的路徑：Previous tab、palette 選 tab、Parent tab。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 未做 live 驗證：Zen 沒開 debugger port 6000。
+
+#### Packaging
+- 依 Makefile 清單用 PowerShell/.NET `ZipArchive` 重新打包 `zen-tabs-panel.xpi`（17 entries，全部 `/` 路徑）。
+- 版本維持 `0.4.5`，已確認 XPI 內 `experiment/api.js` 含本次修正。
+- SHA256: `01D66CC841644816978F62999EA4291BFA1EE24631F51C047E01965FD9E2C042`。
+
+#### Follow-up
+- 安裝 XPI 後完整重啟 Zen 再測。
+- 若在 sidebar 直接點 essential 時 Zen 本身仍換 workspace，那是 Zen 原生行為，需另外處理。
+
+### 2026-11-07 - Previous tab 改用自己的 tab 歷史
+
+#### Changed
+- `experiment/api.js` 新增 in-memory `tabHistory`（最近在前，最多 50 筆）。
+- `TabSelect` 後等 300ms，tab 仍被選取才記錄；Zen 換 workspace 時瞬間自動選取的 tab 不會進歷史。
+- `TabClose` 時從歷史移除；teardown 時清空並取消 timer；啟動時記錄目前 tab。
+- `goToPreviousTab()` 先 flush 待記錄的 tab，再從歷史找第一個非目前/非 split view 可見的 tab；歷史沒有可用 tab 時才 fallback 回原本 `lastAccessed` 邏輯。
+
+#### Why
+- `lastAccessed` 會被任何 workspace 切換更新（側邊欄點 Essential、原生 Ctrl+Tab 等），讓 Previous tab 跳錯。
+- 自己記歷史後，就不再依賴 `lastAccessed`，也為之後拿掉 Ctrl+Tab 攔截器鋪路。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 重新打包 XPI：17 entries，`/` 路徑，含本次與 Essential 修正。SHA256 `BE8AC9A944574220F7FE82BA4036F06D10668335A05C378AECE228C046A779AE`。
+- 未做 live 驗證。
+
+#### Risks / Follow-up
+- 300ms 內連續切 tab，中間的 tab 不會被記錄（刻意的）。
+- 歷史只存在記憶體，重啟 Zen 後從頭記錄，期間 fallback 用 `lastAccessed`。
+- 需實測：從 Essential 回到原 workspace 的 tab 時，`activateNativeTab()` 的 workspace 還原是否會把選取蓋掉。
+
+### 2026-11-07 - 移除 Ctrl+Tab 攔截器
+
+#### Changed
+- 刪除 `experiment/api.js` 的 `installEssentialCtrlTabGuard()`、`essentialCtrlTabGuard` 變數、unload 時的 listener 清理，以及啟動時的呼叫。
+
+#### Why
+- 攔截器吃掉每次 Ctrl+Tab，導致 Firefox/Zen 原生 Ctrl+Tab 預覽面板不出現。
+- Previous tab 已改用自己的 tab 歷史，使用者實測 OK，不再需要攔截器保護 `lastAccessed`。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 重新打包 XPI：17 entries，`/` 路徑，確認不含 CtrlTab 程式、含 tab 歷史。SHA256 `7493341D86375122E8C1DA01C254B552661F3935E47E15D50EAA1D5D0C03E4E0`。
+
+#### Risks / Follow-up
+- 原生 Ctrl+Tab 撞到 Essential 時可能換 workspace（0.4.0 前的舊行為）。
+- 預覽面板需 `browser.ctrlTab.sortByRecentlyUsed = true`。
+
+### 2026-11-07 - 外掛自己的 Ctrl+Tab 切換面板（含網頁預覽）
+
+#### 需求
+- 使用者用 AHK 把 Ctrl+Tab 映射成 Ctrl+Alt+P（Previous tab）以跨 workspace 切換，但這樣就失去按住 Ctrl 的預覽面板。
+- Zen 原生 Ctrl+Tab 面板只列目前 workspace 的分頁（其他 workspace 的 tab 是 hidden）。
+- 要一個新的小面板：跨 workspace、有網頁預覽；Recent 面板保留不動。
+
+#### Changed
+- `experiment/api.js` 新增 Ctrl+Tab switcher（`installCtrlTabSwitcher()` / `uninstallCtrlTabSwitcher()`）：
+  - window capture `keydown` 攔 Ctrl+Tab / Ctrl+Shift+Tab；palette overlay 開著時不攔。
+  - 快按：200ms 內放開 Ctrl → 直接跳上一個 tab（同 Previous tab）。
+  - 按住：顯示面板，Tab / Shift+Tab / 左右鍵移動，放開 Ctrl 或 Enter 切換，Esc 取消，滑鼠點卡片也可切換；視窗失焦自動取消。
+  - 清單：目前 tab + `tabHistory` + 其他 tab 依 `lastAccessed`，最多 8 張，跨所有 workspace，含 Essential。
+  - 每張卡片：網頁縮圖、favicon、顯示標題、workspace 名稱（Essential 顯示 `Essential`）。
+  - 切換走 `activateNativeTab()`，會自動切 workspace，Essential 不會帶走 workspace。
+- 縮圖：用 `PageThumbs.captureToCanvas()`；`TabSelect` 時擷取剛離開的 tab（同 Firefox 原生 tabPreviews 做法），面板打開時補擷取缺的與目前 tab；擷取失敗或未載入（`pending`）的 tab 顯示大 favicon。快取用 `WeakMap`，tab 關掉自動回收。
+- `README.md` 補上 Ctrl+Tab 說明。
+
+#### Files touched
+- `experiment/api.js`
+- `README.md`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 重新打包 XPI：17 entries，`/` 路徑，含 switcher 與 tab 歷史。SHA256 `29D1022EB07C875968D833E004BC98DCA5DD06066215C02A823EE5F4442ADD0F`。
+- 未做 live 驗證。
+
+#### Risks / Follow-up
+- 使用者需移除 AHK 的 Ctrl+Tab → Ctrl+Alt+P 映射。
+- 建議關閉 `browser.ctrlTab.sortByRecentlyUsed`，避免原生面板搶事件。
+- 背景 tab 縮圖是否成功、`PageThumbs` import 路徑在 Zen 版本是否正確，需實測；失敗時會退回 favicon。
+- Ctrl+Tab 鍵位固定，不在 Manage Extension Shortcuts 裡。
+
+### 2026-11-07 - Ctrl+Tab 面板與 Previous tab 排除 Zen 空白分頁
+
+#### Changed
+- `experiment/api.js` 新增 `isZenEmptyTab()`：`zen-empty-tab` 屬性或 `gZenWorkspaces._emptyTab`。
+- 空白分頁不進 `tabHistory`、不出現在 Ctrl+Tab 面板、不會成為 Previous tab 目標。
+- 目前 tab 是空白分頁時，面板第一張就是上一個 tab，預設選第一張。
+
+#### Why
+- 使用者實測 Ctrl+Tab 面板成功，但 workspace 開頭 Zen 自帶的「新分頁」也被列進來。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- XPI：17 entries，`/` 路徑，含 `isZenEmptyTab`。SHA256 `7256E938AE496B741B5B6BE35405D0DD0069E36AB06B205B5434C6FF1D850343`。
+- 未 live 驗證 `zen-empty-tab` 屬性名稱；使用者自己開的一般新分頁不會被排除。
+
+### 2026-11-07 - 版本更新為 0.5.0
+
+#### Changed
+- `manifest.json` 的 `version` / `version_name`、`package.json` 的 `version`、`README.md` 的版本標示：`0.4.5` → `0.5.0`。
+- 涵蓋今天的 Essential 修正、Previous tab 自己的歷史、移除 Ctrl+Tab 攔截器、新 Ctrl+Tab 預覽面板、排除 Zen 空白分頁。
+
+#### Files touched
+- `manifest.json`
+- `package.json`
+- `README.md`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- JSON parse OK，兩個檔案都是 `0.5.0`。
+- XPI 內 `manifest.json` 版本 `0.5.0`，17 entries，`/` 路徑。SHA256 `EAFA393AF2D9ADC489588FD95890ED6CB030CFF63A7AF552ED782369F1728186`。
+
+#### Git
+- 尚未 commit / tag / push。
+
+### 2026-11-07 - Ctrl+Tab 面板隱藏未載入分頁
+
+#### Changed
+- `experiment/api.js` 的 `getSwitcherTabs()` 排除有 `pending` 屬性的 tab（session restore 後未載入、或被卸載的 tab）；目前 tab 例外。
+
+#### Why
+- 剛開瀏覽器時，面板會用上次 session 的 `lastAccessed` 補滿 8 張，出現一堆還沒載入的 tab。
+- 使用者選做法 B：藏起未載入分頁（這次用過但之後被卸載的 tab 也會一起藏起來）。
+
+#### Scope
+- 只影響 Ctrl+Tab 面板；Recent 面板、Previous tab 都不變。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- XPI：版本 `0.5.0`，17 entries，含修正。SHA256 `F210CF8D747104A8161F4922C5BD744282C9A2FBF09BA30C839B428D65376CEE`。
 
 ## 未來 Journal Entry 模板
 
