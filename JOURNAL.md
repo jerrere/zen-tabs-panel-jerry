@@ -22,6 +22,34 @@ origin   https://github.com/jerrere/zen-tabs-panel-jerry.git
 upstream https://github.com/cfilipov/zen-tabs-panel.git
 ```
 
+### 2026-05-31 - Popup preview artifact
+
+#### Changed
+- Added a standalone preview of the Navigate popup UI for the right-side HTML preview.
+- Copied the preview to `index.html` so the project preview can load it as the default page.
+- Added lightweight interaction for button selection, search focus, and status feedback.
+
+#### Why
+- The user wanted the screenshot's extension interface visible in the interactive preview window without changing the real extension popup implementation.
+
+#### Files touched
+- `index.html`
+- `popup-interface-preview.html`
+- `JOURNAL.md`
+
+#### Validation
+- Read `.od-skills/web-prototype-fef63bc1bc/assets/template.html`.
+- Read `.od-skills/web-prototype-fef63bc1bc/references/layouts.md`.
+- Read `.od-skills/web-prototype-fef63bc1bc/references/checklist.md`.
+- Reviewed `popup/popup.html`, `popup/popup.css`, and `popup/popup.js`.
+- Inspected `mptjadzp-PixPin_20260531_16-44-43.png` as the visual reference.
+- Ran `rg -n "#[0-9a-fA-F]{3,8}|scrollIntoView|Feature One|Feature Two|lorem|Lorem|purple|violet" index.html popup-interface-preview.html`.
+- Ran an extracted-script `node --check` against the inline JavaScript.
+- Attempted to open the in-app browser preview, but the browser surface reported unavailable; `index.html` is the fallback preview entry.
+
+#### Follow-up
+- If this preview should become the actual extension UI, port the visual changes into `popup/popup.css` / `popup/popup.js` and test inside Zen Browser.
+
 約定：
 
 - `origin` 是自己的 GitHub repo，用來保存自己的版本。

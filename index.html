@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zen Tabs Panel Popup Preview</title>
+  <style>
+    /* design-systems/clean/tokens.css
+     * Structured token bindings for Clean.
+     * clean product system with white surfaces, subtle borders, and focused hierarchy.
+     */
+
+    :root {
+      --bg: #ffffff;
+      --surface: #f7f7f7;
+      --surface-warm: #eeeeee;
+      --fg: #111111;
+      --fg-2: #3a3a3a;
+      --muted: #707070;
+      --meta: #111111;
+      --border: #d9d9d9;
+      --border-soft: #eeeeee;
+      --accent: #111111;
+      --accent-on: #ffffff;
+      --accent-hover: color-mix(in oklab, var(--accent), black 8%);
+      --accent-active: color-mix(in oklab, var(--accent), black 14%);
+      --success: #168a46;
+      --warn: #b7791f;
+      --danger: #c53030;
+      --font-display: Inter, system-ui, sans-serif;
+      --font-body: Inter, system-ui, sans-serif;
+      --font-mono: "SF Mono", ui-monospace, Menlo, monospace;
+      --text-xs: 12px;
+      --text-sm: 14px;
+      --text-base: 16px;
+      --text-lg: 18px;
+      --text-xl: 24px;
+      --text-2xl: 36px;
+      --text-3xl: 54px;
+      --text-4xl: 76px;
+      --leading-body: 1.52;
+      --leading-tight: 1.06;
+      --tracking-display: -0.025em;
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-5: 20px;
+      --space-6: 24px;
+      --space-8: 32px;
+      --space-12: 48px;
+      --section-y-desktop: 96px;
+      --section-y-tablet: 68px;
+      --section-y-phone: 48px;
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-pill: 9999px;
+      --elev-flat: none;
+      --elev-ring: 0 0 0 1px var(--border);
+      --elev-raised: 0 16px 40px rgba(0, 0, 0, 0.10);
+      --focus-ring: 0 0 0 3px rgba(17, 17, 17, 0.18);
+      --motion-fast: 150ms;
+      --motion-base: 240ms;
+      --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+      --container-max: 1180px;
+      --container-gutter-desktop: 36px;
+      --container-gutter-tablet: 24px;
+      --container-gutter-phone: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: var(--text-sm);
+      line-height: var(--leading-body);
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      cursor: pointer;
+    }
+
+    .preview-shell {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: var(--space-8);
+      background: var(--surface);
+    }
+
+    .palette {
+      position: relative;
+      width: min(960px, calc(100vw - 24px));
+      min-height: 576px;
+      padding: var(--space-4) 28px 10px;
+      border: 1px solid var(--border-soft);
+      border-radius: 24px;
+      background: color-mix(in oklab, var(--surface), var(--bg) 34%);
+      box-shadow: var(--elev-raised);
+      overflow: hidden;
+    }
+
+    .palette::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      box-shadow: inset 0 1px 0 color-mix(in oklab, var(--bg), transparent 18%);
+    }
+
+    .panel-title {
+      margin: 0 0 var(--space-2) var(--space-2);
+      font-size: var(--text-base);
+      font-weight: 750;
+      line-height: 1.1;
+      letter-spacing: 0;
+      color: color-mix(in oklab, var(--fg), var(--accent) 24%);
+    }
+
+    .close-button {
+      position: absolute;
+      top: 20px;
+      right: 22px;
+      z-index: 2;
+      width: 38px;
+      height: 38px;
+      border-radius: var(--radius-pill);
+      display: grid;
+      place-items: center;
+      background: color-mix(in oklab, var(--surface-warm), var(--bg) 38%);
+      color: color-mix(in oklab, var(--fg), transparent 12%);
+      font-size: 30px;
+      font-weight: 300;
+      line-height: 1;
+      transition: transform var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+    }
+
+    .close-button:hover,
+    .close-button:focus-visible {
+      transform: scale(1.04);
+      background: color-mix(in oklab, var(--surface-warm), var(--fg) 4%);
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(190px, 228px);
+      gap: var(--space-3);
+      align-items: start;
+    }
+
+    .main-area {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-3);
+    }
+
+    .nav-grid {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-3);
+      padding-right: 4px;
+    }
+
+    .card {
+      border: 1px solid color-mix(in oklab, var(--border), var(--bg) 18%);
+      border-radius: var(--radius-lg);
+      background: color-mix(in oklab, var(--bg), transparent 8%);
+      box-shadow: 0 10px 24px color-mix(in oklab, var(--fg), transparent 94%);
+    }
+
+    .nav-item {
+      height: 42px;
+      padding: 0 var(--space-4);
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-2);
+      border: 1px solid color-mix(in oklab, var(--border), var(--bg) 18%);
+      border-radius: var(--radius-lg);
+      background: color-mix(in oklab, var(--bg), transparent 4%);
+      color: color-mix(in oklab, var(--fg), transparent 8%);
+      text-align: left;
+      box-shadow: 0 9px 18px color-mix(in oklab, var(--fg), transparent 95%);
+      transition: transform var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+    }
+
+    .nav-item:hover,
+    .nav-item:focus-visible,
+    .nav-item.is-active {
+      transform: translateY(-1px);
+      background: var(--bg);
+      outline: none;
+      box-shadow: 0 13px 22px color-mix(in oklab, var(--fg), transparent 92%), var(--focus-ring);
+    }
+
+    .nav-item[disabled] {
+      cursor: default;
+      opacity: 0.42;
+      box-shadow: none;
+    }
+
+    .nav-item[disabled]:hover {
+      transform: none;
+      background: color-mix(in oklab, var(--bg), transparent 4%);
+      box-shadow: none;
+    }
+
+    .search-wrap {
+      position: relative;
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      align-items: center;
+      height: 42px;
+      padding: 0 var(--space-4);
+      gap: var(--space-2);
+      border: 1px solid color-mix(in oklab, var(--border), var(--bg) 18%);
+      border-radius: var(--radius-lg);
+      background: color-mix(in oklab, var(--bg), transparent 4%);
+      box-shadow: 0 9px 18px color-mix(in oklab, var(--fg), transparent 95%);
+      transition: box-shadow var(--motion-fast) var(--ease-standard), background var(--motion-fast) var(--ease-standard);
+    }
+
+    .search-wrap:focus-within {
+      background: var(--bg);
+      box-shadow: var(--focus-ring), 0 13px 22px color-mix(in oklab, var(--fg), transparent 92%);
+    }
+
+    .search-wrap input {
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--fg);
+    }
+
+    .search-wrap input::placeholder {
+      color: color-mix(in oklab, var(--muted), var(--bg) 24%);
+    }
+
+    .section-card {
+      padding: 14px 16px 12px;
+    }
+
+    .section-title {
+      margin: 0 0 var(--space-2) var(--space-2);
+      font-size: var(--text-base);
+      font-weight: 760;
+      line-height: 1.25;
+      letter-spacing: 0;
+      color: color-mix(in oklab, var(--fg), var(--accent) 20%);
+    }
+
+    .action-list,
+    .workspace-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-2);
+    }
+
+    .divider {
+      height: 1px;
+      margin: var(--space-2) 0;
+      background: color-mix(in oklab, var(--border), var(--bg) 8%);
+    }
+
+    .row-button {
+      min-height: 36px;
+      width: 100%;
+      padding: 0 var(--space-2);
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto 10px;
+      align-items: center;
+      gap: var(--space-2);
+      border-radius: var(--radius-md);
+      background: transparent;
+      color: color-mix(in oklab, var(--fg), transparent 8%);
+      text-align: left;
+      transition: background var(--motion-fast) var(--ease-standard), color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+    }
+
+    .row-button:hover,
+    .row-button:focus-visible,
+    .row-button.is-active {
+      background: color-mix(in oklab, var(--fg), transparent 94%);
+      color: var(--fg);
+      outline: none;
+    }
+
+    .row-button.is-active {
+      transform: translateX(1px);
+    }
+
+    .row-button[disabled] {
+      cursor: default;
+      color: color-mix(in oklab, var(--muted), var(--bg) 34%);
+    }
+
+    .row-button[disabled]:hover {
+      background: transparent;
+      color: color-mix(in oklab, var(--muted), var(--bg) 34%);
+    }
+
+    .workspace-list {
+      padding: var(--space-1);
+    }
+
+    .workspace-button {
+      min-height: 42px;
+      padding: 0 10px 0 var(--space-2);
+      grid-template-columns: 22px minmax(0, 1fr) auto auto;
+      border: 1px solid color-mix(in oklab, var(--border), var(--bg) 18%);
+      border-radius: 10px;
+      background: color-mix(in oklab, var(--bg), transparent 30%);
+    }
+
+    .workspace-button.is-current {
+      position: relative;
+      background: var(--bg);
+      box-shadow: 0 7px 18px color-mix(in oklab, var(--fg), transparent 94%);
+    }
+
+    .workspace-button.is-current::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 11px;
+      bottom: 11px;
+      width: 2px;
+      border-radius: var(--radius-pill);
+      background: color-mix(in oklab, var(--success), var(--bg) 10%);
+    }
+
+    .bottom-settings {
+      position: absolute;
+      left: 32px;
+      bottom: 10px;
+      width: 150px;
+      height: 44px;
+      display: grid;
+      grid-template-columns: 22px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--space-2);
+      padding: 0 var(--space-5);
+      border: 1px solid color-mix(in oklab, var(--border), var(--bg) 14%);
+      border-radius: var(--radius-lg);
+      background: color-mix(in oklab, var(--bg), transparent 6%);
+      color: var(--fg);
+      text-align: left;
+      box-shadow: 0 10px 22px color-mix(in oklab, var(--fg), transparent 94%);
+      transition: background var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+    }
+
+    .bottom-settings:hover,
+    .bottom-settings:focus-visible {
+      background: var(--bg);
+      outline: none;
+      box-shadow: var(--focus-ring), 0 10px 22px color-mix(in oklab, var(--fg), transparent 94%);
+    }
+
+    .icon {
+      width: 18px;
+      height: 18px;
+      color: color-mix(in oklab, var(--muted), var(--fg) 8%);
+    }
+
+    .icon svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .preview-title {
+      justify-self: end;
+      min-width: 0;
+      max-width: 210px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: color-mix(in oklab, var(--muted), var(--fg) 8%);
+      font-size: var(--text-xs);
+    }
+
+    .badge,
+    .count {
+      min-width: 22px;
+      height: 22px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: var(--radius-sm);
+      background: color-mix(in oklab, var(--surface-warm), var(--bg) 42%);
+      color: color-mix(in oklab, var(--muted), var(--fg) 6%);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      line-height: 1;
+    }
+
+    .count {
+      min-width: 20px;
+      height: 20px;
+      margin-left: 6px;
+      border-radius: var(--radius-pill);
+      font-size: 11px;
+    }
+
+    .arrow {
+      color: color-mix(in oklab, var(--muted), var(--bg) 20%);
+      font-size: var(--text-xs);
+    }
+
+    .workspace-name {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .workspace-emoji {
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    .toast {
+      position: absolute;
+      right: 28px;
+      bottom: 18px;
+      max-width: 360px;
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      background: var(--bg);
+      color: var(--fg-2);
+      font-size: var(--text-xs);
+      box-shadow: 0 12px 28px color-mix(in oklab, var(--fg), transparent 92%);
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+    }
+
+    .toast.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 920px) {
+      .preview-shell {
+        padding: var(--space-3);
+        place-items: start center;
+      }
+
+      .palette {
+        min-height: 0;
+        padding: var(--space-4);
+        border-radius: 18px;
+      }
+
+      .layout,
+      .main-area,
+      .nav-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .bottom-settings {
+        position: static;
+        margin-top: var(--space-3);
+      }
+
+      .preview-title {
+        max-width: 140px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="preview-shell">
+    <section class="palette" data-od-id="popup-preview" aria-label="Zen Tabs Panel Navigate popup preview">
+      <h1 class="panel-title">Navigate</h1>
+      <button class="close-button" type="button" aria-label="關閉">×</button>
+
+      <div class="layout">
+        <div class="main-area">
+          <div class="nav-grid" data-od-id="navigate-shortcuts">
+            <button class="nav-item is-active" type="button" data-action="Previous">
+              <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 7 4 11l4 4"/><path d="M4 11h16"/><path d="m16 5 4 4-4 4"/></svg></span>
+              <span class="label">Previous</span>
+              <span class="preview-title">nexu-io/open-design: 🎨 Local-first,...</span>
+              <span class="badge">P</span>
+            </button>
+
+            <button class="nav-item" type="button" data-action="Parent">
+              <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 20V4"/><path d="m8 8 4-4 4 4"/><circle cx="12" cy="20" r="1.8"/></svg></span>
+              <span class="label">Parent</span>
+              <span></span>
+              <span class="badge">T</span>
+            </button>
+
+            <label class="search-wrap" data-od-id="title-search">
+              <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></span>
+              <input id="titleSearch" type="search" placeholder="Search tab titles" autocomplete="off">
+              <span class="badge">Z</span>
+            </label>
+
+            <button class="nav-item" type="button" disabled>
+              <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v16"/><path d="m8 16 4 4 4-4"/><circle cx="12" cy="4" r="1.8"/></svg></span>
+              <span class="label">Children</span>
+              <span></span>
+              <span class="badge">C</span>
+            </button>
+          </div>
+
+          <section class="section-card card" data-od-id="this-tab">
+            <h2 class="section-title">This tab</h2>
+            <div class="action-list">
+              <button class="row-button" type="button" disabled><span class="icon"><svg viewBox="0 0 24 24"><path d="M6 4v12"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18c5 0 10-5 10-10"/></svg></span><span class="label">Siblings</span><span class="badge">B</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Tab History"><span class="icon"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.35-5.65L4 8"/><path d="M4 4v4h4"/><path d="M12 8v5l3 2"/></svg></span><span class="label">Tab History</span><span class="badge">N</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Tab info"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></span><span class="label">Tab info</span><span class="badge">I</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Unload"><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 3a7 7 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg></span><span class="label">Unload</span><span class="badge">U</span><span></span></button>
+            </div>
+          </section>
+
+          <section class="section-card card" data-od-id="all-tabs">
+            <h2 class="section-title">All tabs</h2>
+            <div class="action-list">
+              <button class="row-button" type="button" data-action="Parent tabs"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><path d="M12 8v5M12 13l-5 5M12 13l5 5"/><circle cx="7" cy="19" r="1.8"/><circle cx="17" cy="19" r="1.8"/></svg></span><span class="label">Parent tabs</span><span class="badge">⇧T</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" disabled><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="1"/></svg></span><span class="label">New tabs</span><span class="badge">⇧N</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Recent"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l4 2"/></svg></span><span class="label">Recent</span><span class="badge">R</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" disabled><span class="icon"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="10" height="10" rx="2"/><path d="M6 14H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1"/></svg></span><span class="label">Duplicates</span><span class="badge">D</span><span class="arrow">›</span></button>
+              <div class="divider" aria-hidden="true"></div>
+              <button class="row-button" type="button" data-action="Domains"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span><span class="label">Domains</span><span class="badge">⇧D</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Tabs by age"><span class="icon"><svg viewBox="0 0 24 24"><path d="M7 3v4M17 3v4M4 9h16M6 5h12a2 2 0 0 1 2 2v12H4V7a2 2 0 0 1 2-2Z"/><circle cx="17" cy="17" r="3"/><path d="M17 15.5V17l1 .7"/></svg></span><span class="label">Tabs by age</span><span class="badge">A</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Most visited"><span class="icon"><svg viewBox="0 0 24 24"><path d="m12 3 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7L6.8 19l1-5.8L3.6 9.1l5.8-.8L12 3Z"/></svg></span><span class="label">Most visited</span><span class="badge">V</span><span class="arrow">›</span></button>
+            </div>
+          </section>
+
+          <section class="section-card card" data-od-id="organize">
+            <h2 class="section-title">Organize</h2>
+            <div class="action-list">
+              <button class="row-button" type="button" data-action="Move to start"><span class="icon"><svg viewBox="0 0 24 24"><path d="M5 4h14"/><path d="M12 20V8"/><path d="m8 12 4-4 4 4"/></svg></span><span class="label">Move to start</span><span class="badge">S</span><span></span></button>
+              <button class="row-button" type="button" data-action="Move to end"><span class="icon"><svg viewBox="0 0 24 24"><path d="M5 20h14"/><path d="M12 4v12"/><path d="m8 12 4 4 4-4"/></svg></span><span class="label">Move to end</span><span class="badge">E</span><span></span></button>
+              <button class="row-button" type="button" data-action="Reorder tabs"><span class="icon"><svg viewBox="0 0 24 24"><path d="m8 8 4-4 4 4M16 16l-4 4-4-4"/></svg></span><span class="label">Reorder tabs</span><span class="badge">O</span><span class="arrow">›</span></button>
+              <div class="divider" aria-hidden="true"></div>
+              <button class="row-button" type="button" data-action="Move to workspace"><span class="icon"><svg viewBox="0 0 24 24"><path d="M4 12h13"/><path d="m12 7 5 5-5 5"/><path d="M20 5v14"/></svg></span><span class="label">Move to workspace</span><span class="badge">M</span><span class="arrow">›</span></button>
+              <button class="row-button" type="button" data-action="Scroll to tab"><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="1"/></svg></span><span class="label">Scroll to tab</span><span class="badge">L</span><span></span></button>
+            </div>
+          </section>
+        </div>
+
+        <aside class="section-card card" data-od-id="workspaces">
+          <h2 class="section-title">Workspaces</h2>
+          <div class="workspace-list">
+            <button class="row-button workspace-button is-current" type="button" data-action="Workspace: jerre"><span class="workspace-emoji">💫</span><span class="workspace-name"><span class="label">jerre</span><span class="count">49</span></span><span class="badge">1</span><span></span></button>
+            <button class="row-button workspace-button" type="button" data-action="Workspace: Entertainment"><span class="workspace-emoji">🎆</span><span class="workspace-name"><span class="label">Entertainment</span><span class="count">22</span></span><span class="badge">2</span><span></span></button>
+            <button class="row-button workspace-button" type="button" data-action="Workspace: ASMR"><span class="workspace-emoji">💕</span><span class="workspace-name"><span class="label">ASMR</span><span class="count">3</span></span><span class="badge">3</span><span></span></button>
+          </div>
+        </aside>
+      </div>
+
+      <button class="bottom-settings" type="button" data-action="Settings">
+        <span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1L14.5 3h-5l-.3 3.1a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5A7 7 0 0 0 5 12a7 7 0 0 0 .1 1l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 3.1h5l.3-3.1a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5A7 7 0 0 0 19 12Z"/></svg></span>
+        <span class="label">Settings</span>
+        <span class="badge">,</span>
+      </button>
+
+      <div class="toast" role="status" aria-live="polite" id="toast">已選取</div>
+    </section>
+  </main>
+
+  <script>
+    const toast = document.getElementById("toast");
+    const search = document.getElementById("titleSearch");
+    const actionable = Array.from(document.querySelectorAll("button[data-action]"));
+    let toastTimer = null;
+
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("is-visible");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 1400);
+    }
+
+    actionable.forEach((button) => {
+      button.addEventListener("click", () => {
+        actionable.forEach((item) => item.classList.remove("is-active"));
+        button.classList.add("is-active");
+        showToast(`已選取：${button.dataset.action}`);
+      });
+    });
+
+    search.addEventListener("input", () => {
+      const value = search.value.trim();
+      showToast(value ? `搜尋分頁標題：${value}` : "搜尋列已清空");
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key.toLowerCase() === "z" && document.activeElement !== search) {
+        event.preventDefault();
+        search.focus();
+        showToast("搜尋列已聚焦");
+      }
+    });
+  </script>
+</body>
+</html>
