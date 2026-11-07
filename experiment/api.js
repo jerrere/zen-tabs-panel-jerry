@@ -83,10 +83,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
       close() {
         const w = Services.wm.getMostRecentWindow("navigator:browser");
         if (!w) return;
-        if (essentialCtrlTabGuard) {
-          w.removeEventListener("keydown", essentialCtrlTabGuard, true);
-          essentialCtrlTabGuard = null;
-        }
         if (duplicateSyncTimer !== null) {
           w.clearTimeout(duplicateSyncTimer);
           duplicateSyncTimer = null;
@@ -144,88 +140,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
       return cleanTitleText(tab.label || tab.getAttribute?.("label"));
     }
 
-    let essentialCtrlTabGuard = null;
     let duplicateSyncTimer = null;
-
-    function installEssentialCtrlTabGuard() {
-      const w = getWin();
-      if (!w || essentialCtrlTabGuard) return;
-
-      function stopCtrlTabEvent(event) {
-        event.preventDefault();
-        event.stopPropagation();
-        if (typeof event.stopImmediatePropagation === "function") {
-          event.stopImmediatePropagation();
-        }
-      }
-
-      function isCtrlTabEvent(event) {
-        return (
-          !event.defaultPrevented &&
-          event.ctrlKey &&
-          !event.altKey &&
-          !event.metaKey &&
-          event.key === "Tab"
-        );
-      }
-
-      function isUsableCtrlTabCandidate(tab) {
-        return tab && !tab.closing && !tab.hidden;
-      }
-
-      function tabBelongsToWorkspace(tab, workspaceId) {
-        const tabWorkspace = tab.getAttribute("zen-workspace-id") || null;
-        return !workspaceId || !tabWorkspace || tabWorkspace === workspaceId;
-      }
-
-      function getCtrlTabCandidates(current, workspaceId) {
-        const currentIsEssential = current?.hasAttribute("zen-essential");
-        return getAllTabElements()
-          .filter(isUsableCtrlTabCandidate)
-          .filter((tab) => {
-            if (tab.hasAttribute("zen-essential")) return currentIsEssential;
-            return tabBelongsToWorkspace(tab, workspaceId);
-          })
-          .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
-      }
-
-      function getCtrlTabTarget(candidates, current, reverse) {
-        if (candidates.length <= 1) return null;
-        const currentIndex = candidates.indexOf(current);
-        if (currentIndex < 0) return candidates[0] || null;
-        if (reverse) return candidates[(currentIndex + candidates.length - 1) % candidates.length];
-        return candidates.find((tab) => tab !== current) || null;
-      }
-
-      function restoreWorkspaceIfNeeded(workspaceId) {
-        if (!workspaceId || !w.gZenWorkspaces || w.gZenWorkspaces.activeWorkspace === workspaceId) return;
-        w.gZenWorkspaces.changeWorkspaceWithID(workspaceId).catch(() => {});
-      }
-
-      function selectCtrlTabTarget(target, workspaceId) {
-        w.gBrowser.selectedTab = target;
-        if (!target.hasAttribute("zen-essential")) return;
-        Promise.resolve().then(() => restoreWorkspaceIfNeeded(workspaceId));
-        w.setTimeout(() => restoreWorkspaceIfNeeded(workspaceId), 0);
-      }
-
-      essentialCtrlTabGuard = (event) => {
-        if (!isCtrlTabEvent(event)) return;
-
-        const current = w.gBrowser?.selectedTab;
-        const workspaceId = w.gZenWorkspaces?.activeWorkspace || null;
-        if (!current || !workspaceId) return;
-
-        const candidates = getCtrlTabCandidates(current, workspaceId);
-        const target = getCtrlTabTarget(candidates, current, event.shiftKey);
-
-        stopCtrlTabEvent(event);
-        if (!target || target === current) return;
-        selectCtrlTabTarget(target, workspaceId);
-      };
-
-      w.addEventListener("keydown", essentialCtrlTabGuard, true);
-    }
 
     function firstGrapheme(value) {
       return Array.from(cleanTitleText(value))[0] || "";
@@ -373,6 +288,35 @@ this.zenWorkspaces = class extends ExtensionAPI {
       focusState = { tab, startedAt: Date.now(), paused: false };
     }
 
+    // Our own tab history for Previous tab, most recent first. A tab is
+    // recorded only after it stays selected for a moment, so a tab Zen
+    // selects for an instant during a workspace switch is skipped.
+    const TAB_HISTORY_SETTLE_MS = 300;
+    const TAB_HISTORY_MAX = 50;
+    let tabHistory = [];
+    let tabHistoryTimer = null;
+
+    function recordTabHistory(tab) {
+      if (!tab || tab.closing) return;
+      tabHistory = [tab, ...tabHistory.filter((t) => t !== tab)].slice(0, TAB_HISTORY_MAX);
+    }
+
+    function flushTabHistory() {
+      const w = getWin();
+      if (tabHistoryTimer !== null) {
+        w?.clearTimeout(tabHistoryTimer);
+        tabHistoryTimer = null;
+      }
+      recordTabHistory(w?.gBrowser?.selectedTab);
+    }
+
+    function scheduleTabHistory() {
+      const w = getWin();
+      if (!w) return;
+      if (tabHistoryTimer !== null) w.clearTimeout(tabHistoryTimer);
+      tabHistoryTimer = w.setTimeout(flushTabHistory, TAB_HISTORY_SETTLE_MS);
+    }
+
     const TAB_TRACKING_KEY = "__zenTabsPanelFocusTracking";
     let tabTrackingInstalled = false;
     let tabTrackingListeners = null;
@@ -397,9 +341,13 @@ this.zenWorkspaces = class extends ExtensionAPI {
             if (!stats.createdAt) writeTabStats(event.target, { ...stats, createdAt: Date.now() });
           } catch (e) {}
         };
-        const onSelect = (event) => beginFocus(event.target);
+        const onSelect = (event) => {
+          beginFocus(event.target);
+          scheduleTabHistory();
+        };
         const onClose = (event) => {
           try { if (focusState.tab === event.target) endFocus(); } catch (e) {}
+          tabHistory = tabHistory.filter((t) => t !== event.target);
         };
 
         w.gBrowser.tabContainer.addEventListener("TabOpen", onOpen);
@@ -409,6 +357,7 @@ this.zenWorkspaces = class extends ExtensionAPI {
         w[TAB_TRACKING_KEY] = tabTrackingListeners;
         if (w.gBrowser.selectedTab) {
           focusState = { tab: w.gBrowser.selectedTab, startedAt: Date.now(), paused: false };
+          recordTabHistory(w.gBrowser.selectedTab);
         }
         tabTrackingInstalled = true;
       } catch (e) {}
@@ -428,6 +377,11 @@ this.zenWorkspaces = class extends ExtensionAPI {
           delete w[TAB_TRACKING_KEY];
         }
       }
+      if (tabHistoryTimer !== null) {
+        try { getWin()?.clearTimeout(tabHistoryTimer); } catch (e) {}
+        tabHistoryTimer = null;
+      }
+      tabHistory = [];
       tabTrackingListeners = null;
       tabTrackingInstalled = false;
     }
@@ -748,8 +702,6 @@ this.zenWorkspaces = class extends ExtensionAPI {
       return overlay && !overlay.dataset.closing;
     }
 
-    installEssentialCtrlTabGuard();
-
     return {
       zenWorkspaces: {
         async getAll() {
@@ -812,7 +764,15 @@ this.zenWorkspaces = class extends ExtensionAPI {
             }
           }
 
-          // Sort by lastAccessed descending, filter out visible and unread tabs
+          // Prefer our own history: lastAccessed gets bumped when Zen
+          // switches workspaces on its own (e.g. around Essential tabs).
+          flushTabHistory();
+          const fromHistory = tabHistory.find(
+            (t) => t.isConnected && !t.closing && !visibleDomIds.has(t.id)
+          );
+          if (fromHistory) return activateNativeTab(fromHistory);
+
+          // Fallback: sort by lastAccessed descending, filter out visible and unread tabs
           const candidates = allTabs
             .filter((t) => !visibleDomIds.has(t.id) && !t.hasAttribute("unread"))
             .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));

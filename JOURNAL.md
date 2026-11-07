@@ -695,6 +695,57 @@ git push origin v0.3.1-ui-restore
 - 安裝 XPI 後完整重啟 Zen 再測。
 - 若在 sidebar 直接點 essential 時 Zen 本身仍換 workspace，那是 Zen 原生行為，需另外處理。
 
+### 2026-11-07 - Previous tab 改用自己的 tab 歷史
+
+#### Changed
+- `experiment/api.js` 新增 in-memory `tabHistory`（最近在前，最多 50 筆）。
+- `TabSelect` 後等 300ms，tab 仍被選取才記錄；Zen 換 workspace 時瞬間自動選取的 tab 不會進歷史。
+- `TabClose` 時從歷史移除；teardown 時清空並取消 timer；啟動時記錄目前 tab。
+- `goToPreviousTab()` 先 flush 待記錄的 tab，再從歷史找第一個非目前/非 split view 可見的 tab；歷史沒有可用 tab 時才 fallback 回原本 `lastAccessed` 邏輯。
+
+#### Why
+- `lastAccessed` 會被任何 workspace 切換更新（側邊欄點 Essential、原生 Ctrl+Tab 等），讓 Previous tab 跳錯。
+- 自己記歷史後，就不再依賴 `lastAccessed`，也為之後拿掉 Ctrl+Tab 攔截器鋪路。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 重新打包 XPI：17 entries，`/` 路徑，含本次與 Essential 修正。SHA256 `BE8AC9A944574220F7FE82BA4036F06D10668335A05C378AECE228C046A779AE`。
+- 未做 live 驗證。
+
+#### Risks / Follow-up
+- 300ms 內連續切 tab，中間的 tab 不會被記錄（刻意的）。
+- 歷史只存在記憶體，重啟 Zen 後從頭記錄，期間 fallback 用 `lastAccessed`。
+- 需實測：從 Essential 回到原 workspace 的 tab 時，`activateNativeTab()` 的 workspace 還原是否會把選取蓋掉。
+
+### 2026-11-07 - 移除 Ctrl+Tab 攔截器
+
+#### Changed
+- 刪除 `experiment/api.js` 的 `installEssentialCtrlTabGuard()`、`essentialCtrlTabGuard` 變數、unload 時的 listener 清理，以及啟動時的呼叫。
+
+#### Why
+- 攔截器吃掉每次 Ctrl+Tab，導致 Firefox/Zen 原生 Ctrl+Tab 預覽面板不出現。
+- Previous tab 已改用自己的 tab 歷史，使用者實測 OK，不再需要攔截器保護 `lastAccessed`。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- 重新打包 XPI：17 entries，`/` 路徑，確認不含 CtrlTab 程式、含 tab 歷史。SHA256 `7493341D86375122E8C1DA01C254B552661F3935E47E15D50EAA1D5D0C03E4E0`。
+
+#### Risks / Follow-up
+- 原生 Ctrl+Tab 撞到 Essential 時可能換 workspace（0.4.0 前的舊行為）。
+- 預覽面板需 `browser.ctrlTab.sortByRecentlyUsed = true`。
+
 ## 未來 Journal Entry 模板
 
 ```markdown
