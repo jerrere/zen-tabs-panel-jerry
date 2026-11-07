@@ -764,7 +764,9 @@ this.zenWorkspaces = class extends ExtensionAPI {
     function getSwitcherTabs() {
       const w = getWin();
       const current = w?.gBrowser?.selectedTab;
-      const alive = (t) => t && t.isConnected && !t.closing && !isZenEmptyTab(t);
+      // Unloaded tabs ("pending": restored or discarded) are left out.
+      const alive = (t) =>
+        t && t.isConnected && !t.closing && !isZenEmptyTab(t) && (t === current || !t.hasAttribute("pending"));
       flushTabHistory();
       const fromHistory = tabHistory.filter((t) => alive(t) && t !== current);
       const rest = getAllTabElements()

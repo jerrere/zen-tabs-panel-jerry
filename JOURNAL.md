@@ -803,6 +803,48 @@ git push origin v0.3.1-ui-restore
 - XPI：17 entries，`/` 路徑，含 `isZenEmptyTab`。SHA256 `7256E938AE496B741B5B6BE35405D0DD0069E36AB06B205B5434C6FF1D850343`。
 - 未 live 驗證 `zen-empty-tab` 屬性名稱；使用者自己開的一般新分頁不會被排除。
 
+### 2026-11-07 - 版本更新為 0.5.0
+
+#### Changed
+- `manifest.json` 的 `version` / `version_name`、`package.json` 的 `version`、`README.md` 的版本標示：`0.4.5` → `0.5.0`。
+- 涵蓋今天的 Essential 修正、Previous tab 自己的歷史、移除 Ctrl+Tab 攔截器、新 Ctrl+Tab 預覽面板、排除 Zen 空白分頁。
+
+#### Files touched
+- `manifest.json`
+- `package.json`
+- `README.md`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- JSON parse OK，兩個檔案都是 `0.5.0`。
+- XPI 內 `manifest.json` 版本 `0.5.0`，17 entries，`/` 路徑。SHA256 `EAFA393AF2D9ADC489588FD95890ED6CB030CFF63A7AF552ED782369F1728186`。
+
+#### Git
+- 尚未 commit / tag / push。
+
+### 2026-11-07 - Ctrl+Tab 面板隱藏未載入分頁
+
+#### Changed
+- `experiment/api.js` 的 `getSwitcherTabs()` 排除有 `pending` 屬性的 tab（session restore 後未載入、或被卸載的 tab）；目前 tab 例外。
+
+#### Why
+- 剛開瀏覽器時，面板會用上次 session 的 `lastAccessed` 補滿 8 張，出現一堆還沒載入的 tab。
+- 使用者選做法 B：藏起未載入分頁（這次用過但之後被卸載的 tab 也會一起藏起來）。
+
+#### Scope
+- 只影響 Ctrl+Tab 面板；Recent 面板、Previous tab 都不變。
+
+#### Files touched
+- `experiment/api.js`
+- `JOURNAL.md`
+- `zen-tabs-panel.xpi`
+
+#### Validation
+- `node --check experiment/api.js`
+- `node --test tests/*.test.js`：23 passed。
+- XPI：版本 `0.5.0`，17 entries，含修正。SHA256 `F210CF8D747104A8161F4922C5BD744282C9A2FBF09BA30C839B428D65376CEE`。
+
 ## 未來 Journal Entry 模板
 
 ```markdown
